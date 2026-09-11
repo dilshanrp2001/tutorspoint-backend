@@ -24,6 +24,17 @@ spring:
             enable: true
 
 tutorspoint:
+  notification:
+    email:
+      from: ${MAIL_FROM}
+      from-name: ${MAIL_FROM_NAME}
+    sms:
+      notify-lk:
+        base-url: ${SMS_NOTIFY_LK_BASE_URL}
+        user-id: ${SMS_NOTIFY_LK_USER_ID}
+        api-key: ${SMS_NOTIFY_LK_API_KEY}
+        sender-id: ${SMS_NOTIFY_LK_SENDER_ID}
+
   security:
     jwt:
       secret: ${JWT_SECRET}

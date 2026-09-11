@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <title>உங்கள் மின்னஞ்சல் முகவரியை உறுதிப்படுத்தவும்</title>
+</head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2933;">
+<div style="max-width:520px;margin:0 auto;padding:32px;background:#ffffff;border-radius:8px;">
+    <h1 style="margin:0 0 16px;font-size:20px;">TutorsPoint</h1>
+    <p>வணக்கம் <span th:text="${fullName}">நண்பரே</span>,</p>
+    <p>உங்கள் TutorsPoint கணக்கை நிறைவு செய்ய இந்த மின்னஞ்சல் முகவரியை உறுதிப்படுத்தவும்.</p>
+    <p style="margin:28px 0;">
+        <a th:href="${verificationUrl}"
+           style="display:inline-block;padding:12px 24px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;">
+            என் மின்னஞ்சலை உறுதிப்படுத்து
+        </a>
+    </p>
+    <p>இந்தச் சுட்டி <span th:text="${expiryHours}">24</span> மணி நேரத்தில் காலாவதியாகும்.</p>
+    <p>பொத்தான் வேலை செய்யவில்லை என்றால், கீழுள்ள முகவரியை உங்கள் உலாவியில் ஒட்டவும்:</p>
+    <p style="word-break:break-all;font-size:13px;color:#52606d;" th:text="${verificationUrl}">https://tutorspoint.xyz</p>
+    <p style="font-size:13px;color:#52606d;">நீங்கள் TutorsPoint கணக்கை உருவாக்கவில்லை என்றால், இந்த மின்னஞ்சலைப் புறக்கணிக்கவும்.</p>
+</div>
+</body>
+</html>

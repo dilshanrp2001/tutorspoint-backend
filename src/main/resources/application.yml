@@ -22,6 +22,22 @@ spring:
     locations: classpath:db/migration
     clean-disabled: true
 
+  # Translatable text resolved from messages*.properties. English (messages.properties)
+  # is the fallback; the machine's locale must never decide what a user is sent.
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+
+  # Pool behind @Async. Notifications run here, off the request thread.
+  task:
+    execution:
+      thread-name-prefix: tp-async-
+      pool:
+        core-size: 2
+        max-size: 8
+        queue-capacity: 100
+
   jackson:
     default-property-inclusion: non_null
     serialization:
@@ -49,6 +65,12 @@ management:
   endpoint:
     health:
       show-details: never
+  health:
+    # The mail indicator opens an SMTP connection on every probe. Notifications are
+    # fire-and-forget by design, so a mail outage must not report the application as
+    # DOWN and have the platform pull it out of rotation.
+    mail:
+      enabled: false
   info:
     env:
       enabled: false

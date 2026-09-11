@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="si">
+<head>
+    <meta charset="UTF-8">
+    <title>ඔබගේ විද්‍යුත් තැපැල් ලිපිනය සත්‍යාපනය කරන්න</title>
+</head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2933;">
+<div style="max-width:520px;margin:0 auto;padding:32px;background:#ffffff;border-radius:8px;">
+    <h1 style="margin:0 0 16px;font-size:20px;">TutorsPoint</h1>
+    <p>ආයුබෝවන් <span th:text="${fullName}">මිතුර</span>,</p>
+    <p>ඔබගේ TutorsPoint ගිණුම සම්පූර්ණ කිරීම සඳහා මෙම විද්‍යුත් තැපැල් ලිපිනය තහවුරු කරන්න.</p>
+    <p style="margin:28px 0;">
+        <a th:href="${verificationUrl}"
+           style="display:inline-block;padding:12px 24px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;">
+            මගේ විද්‍යුත් තැපෑල සත්‍යාපනය කරන්න
+        </a>
+    </p>
+    <p>මෙම සබැඳිය පැය <span th:text="${expiryHours}">24</span>කින් කල් ඉකුත් වේ.</p>
+    <p>බොත්තම ක්‍රියා නොකරන්නේ නම්, පහත ලිපිනය ඔබගේ බ්‍රවුසරයට පිටපත් කරන්න:</p>
+    <p style="word-break:break-all;font-size:13px;color:#52606d;" th:text="${verificationUrl}">https://tutorspoint.xyz</p>
+    <p style="font-size:13px;color:#52606d;">ඔබ TutorsPoint ගිණුමක් සාදා නොමැති නම්, මෙම පණිවිඩය නොසලකා හරින්න.</p>
+</div>
+</body>
+</html>

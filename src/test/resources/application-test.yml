@@ -1,0 +1,24 @@
+# Integration-test profile (see AbstractIntegrationTest). The datasource comes from the
+# Testcontainers Postgres via @ServiceConnection; everything else a bean needs to exist
+# is stubbed here.
+#
+# Nothing in this file can reach the outside world: no test sends mail, and the SMS
+# gateway is pointed at a dead local port. The test profile is not "dev", so it wires
+# the real NotifyLkSmsProvider rather than the logging one — which is precisely what
+# makes the context load prove that adapter's configuration binds.
+spring:
+  mail:
+    host: localhost
+    port: 3025
+
+tutorspoint:
+  notification:
+    email:
+      from: no-reply@tutorspoint.test
+      from-name: TutorsPoint
+    sms:
+      notify-lk:
+        base-url: http://localhost:1/api/v1
+        user-id: test-user
+        api-key: test-key
+        sender-id: TutorsPoint

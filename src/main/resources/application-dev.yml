@@ -27,6 +27,13 @@ spring:
             enable: true
 
 tutorspoint:
+  notification:
+    email:
+      from: ${MAIL_FROM}
+      from-name: ${MAIL_FROM_NAME:TutorsPoint}
+    # No SMS gateway config here: the dev profile uses LoggingSmsProvider, which prints
+    # the OTP instead of paying to send it.
+
   security:
     jwt:
       secret: ${JWT_SECRET}
