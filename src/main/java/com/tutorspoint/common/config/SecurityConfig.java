@@ -23,7 +23,11 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/v3/api-docs",
-            "/v3/api-docs/**"
+            "/v3/api-docs/**",
+            // Liveness probes for the container platform; details are never shown.
+            "/actuator/health",
+            "/actuator/health/**",
+            "/actuator/info"
     };
 
     @Bean

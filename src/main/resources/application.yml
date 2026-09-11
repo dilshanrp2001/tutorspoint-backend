@@ -39,6 +39,20 @@ server:
     include-message: never
     include-binding-errors: never
 
+# Actuator: only health and info are exposed. Nothing else — env, beans, mappings and
+# heapdump leak configuration and secrets.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+  info:
+    env:
+      enabled: false
+
 # Swagger UI at /swagger-ui.html
 springdoc:
   api-docs:
