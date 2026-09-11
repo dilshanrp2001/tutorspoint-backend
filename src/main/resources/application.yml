@@ -1,0 +1,54 @@
+# Profile-agnostic configuration. Anything environment-specific or secret lives in
+# application-dev.yml / application-prod.yml and is read from environment variables.
+spring:
+  application:
+    name: tutorspoint-backend
+  profiles:
+    default: dev
+
+  jpa:
+    # NEVER 'update'. The schema is owned by Flyway migrations; Hibernate only checks
+    # that the entities match the migrated schema.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    clean-disabled: true
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+
+# Swagger UI at /swagger-ui.html
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+
+logging:
+  level:
+    com.tutorspoint: INFO
