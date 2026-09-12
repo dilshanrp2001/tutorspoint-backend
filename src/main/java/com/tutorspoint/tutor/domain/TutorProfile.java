@@ -210,13 +210,41 @@ public class TutorProfile extends BaseEntity {
     // Editing - one method per step of the profile wizard
     // ---------------------------------------------------------------------
 
-    /** Step 1: who this tutor is (FR-T1). */
-    public void describe(String headline, String bio, String photoUrl, String introVideoUrl) {
+    /** Step 1: who this tutor is, in words (FR-T1). */
+    public void describe(String headline, String bio) {
         ensureEditable();
         this.headline = trimToNull(headline);
         this.bio = trimToNull(bio);
-        this.photoUrl = trimToNull(photoUrl);
-        this.introVideoUrl = trimToNull(introVideoUrl);
+    }
+
+    /**
+     * Step 1, the other half: the photograph, once it has been stored (FR-T1).
+     *
+     * <p>Separate from {@link #describe} and not part of any draft save, because the URL is not
+     * the tutor's to choose. It is issued by the upload endpoint for a file the platform
+     * accepted, re-encoded and stripped of its metadata; letting a draft carry an arbitrary
+     * string here would let a profile point its photograph at anything on the internet.
+     */
+    public void attachPhoto(String photoUrl) {
+        ensureEditable();
+        this.photoUrl = requireText(photoUrl, "photoUrl").trim();
+    }
+
+    /** Removes the photograph. The profile stops being publishable until another is uploaded. */
+    public void removePhoto() {
+        ensureEditable();
+        this.photoUrl = null;
+    }
+
+    /** As {@link #attachPhoto}, for the introduction video. Never required to publish. */
+    public void attachIntroVideo(String introVideoUrl) {
+        ensureEditable();
+        this.introVideoUrl = requireText(introVideoUrl, "introVideoUrl").trim();
+    }
+
+    public void removeIntroVideo() {
+        ensureEditable();
+        this.introVideoUrl = null;
     }
 
     /** Step 2: what they teach (FR-T2). */
@@ -499,6 +527,13 @@ public class TutorProfile extends BaseEntity {
 
     private static String trimToNull(String value) {
         return isBlank(value) ? null : value.trim();
+    }
+
+    private static String requireText(String value, String field) {
+        if (isBlank(value)) {
+            throw new IllegalArgumentException(field + " must not be blank");
+        }
+        return value;
     }
 
     private static <T> T requireNotNull(T value, String field) {

@@ -39,6 +39,12 @@ tutorspoint:
       # Base64-encoded 256-bit key: openssl rand -base64 32
       secret: ${JWT_SECRET}
 
+  storage:
+    local:
+      # Under the working directory, and gitignored. A developer's uploads are throwaway;
+      # production mounts a volume instead (see application-prod.yml).
+      root: ${STORAGE_ROOT:./var/uploads}
+
 logging:
   level:
     com.tutorspoint: DEBUG

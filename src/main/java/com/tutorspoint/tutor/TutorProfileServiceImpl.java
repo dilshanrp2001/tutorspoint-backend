@@ -6,6 +6,13 @@ import com.tutorspoint.auth.security.CurrentUser;
 import com.tutorspoint.common.domain.Language;
 import com.tutorspoint.common.exception.ResourceNotFoundException;
 import com.tutorspoint.common.exception.UnauthorizedActionException;
+import com.tutorspoint.common.storage.FileContent;
+import com.tutorspoint.common.storage.FileStorage;
+import com.tutorspoint.common.storage.FileType;
+import com.tutorspoint.common.storage.ImageSanitiser;
+import com.tutorspoint.common.storage.MediaUrls;
+import com.tutorspoint.common.storage.StorageArea;
+import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.reference.ReferenceLabels;
 import com.tutorspoint.reference.domain.Area;
 import com.tutorspoint.reference.domain.ReferenceEntity;
@@ -30,6 +37,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -58,6 +66,8 @@ public class TutorProfileServiceImpl implements TutorProfileService {
     private final AreaRepository areas;
     private final TutorMapper tutorMapper;
     private final ReferenceLabels referenceLabels;
+    private final FileStorage fileStorage;
+    private final ImageSanitiser imageSanitiser;
     private final CurrentUser currentUser;
 
     @Override
@@ -76,7 +86,7 @@ public class TutorProfileServiceImpl implements TutorProfileService {
         // One call per wizard step. Each may refuse - an inverted fee range, a negative travel
         // radius - and refusing here rather than after a partial write is why the whole draft
         // arrives in one request.
-        profile.describe(request.headline(), request.bio(), request.photoUrl(), request.introVideoUrl());
+        profile.describe(request.headline(), request.bio());
         profile.teaches(
                 resolve(request.subjectCodes(), subjects::findByCodeInAndActiveTrue, "Subject"),
                 resolve(request.examLevelCodes(), examLevels::findByCodeInAndActiveTrue, "Exam level"),
@@ -113,6 +123,61 @@ public class TutorProfileServiceImpl implements TutorProfileService {
         TutorProfile profile = requireOwnProfile();
         profile.unpublish();
         log.info("Tutor {} unpublished their profile", profile.getTutor().getId());
+        return toDto(profile, language);
+    }
+
+
+    @Override
+    @PreAuthorize("hasRole('TUTOR')")
+    @Transactional
+    public TutorProfileDto uploadPhoto(UploadedFile file, Language language) {
+        TutorProfile profile = requireOwnProfile();
+
+        FileType type = file.detectType();
+        StorageArea.PROFILE_PHOTOS.ensureAccepts(type, file.sizeBytes());
+        // Re-encoded before anything is stored, so the file on disk has never contained the
+        // uploader's Exif block - not even for the moment between writing and cleaning it.
+        FileContent sanitised = imageSanitiser.sanitise(file.asContent());
+
+        replaceMedia(StorageArea.PROFILE_PHOTOS, sanitised, profile.getPhotoUrl(), profile::attachPhoto);
+        log.info("Tutor {} updated their profile photo", profile.getTutor().getId());
+        return toDto(profile, language);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('TUTOR')")
+    @Transactional
+    public TutorProfileDto removePhoto(Language language) {
+        TutorProfile profile = requireOwnProfile();
+        String previous = profile.getPhotoUrl();
+        profile.removePhoto();
+        deleteMedia(previous);
+        return toDto(profile, language);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('TUTOR')")
+    @Transactional
+    public TutorProfileDto uploadIntroVideo(UploadedFile file, Language language) {
+        TutorProfile profile = requireOwnProfile();
+
+        FileType type = file.detectType();
+        StorageArea.INTRO_VIDEOS.ensureAccepts(type, file.sizeBytes());
+
+        replaceMedia(StorageArea.INTRO_VIDEOS, file.asContent(), profile.getIntroVideoUrl(),
+                profile::attachIntroVideo);
+        log.info("Tutor {} updated their intro video", profile.getTutor().getId());
+        return toDto(profile, language);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('TUTOR')")
+    @Transactional
+    public TutorProfileDto removeIntroVideo(Language language) {
+        TutorProfile profile = requireOwnProfile();
+        String previous = profile.getIntroVideoUrl();
+        profile.removeIntroVideo();
+        deleteMedia(previous);
         return toDto(profile, language);
     }
 
@@ -191,6 +256,31 @@ public class TutorProfileServiceImpl implements TutorProfileService {
         return requested.stream()
                 .map(q -> new Qualification(q.title(), q.institution(), q.yearAwarded()))
                 .toList();
+    }
+
+    /**
+     * Stores new media, points the profile at it, and removes what it replaced.
+     *
+     * <p>The new file is written before the old one is deleted, so a failure anywhere leaves the
+     * profile showing something rather than nothing. The order also means the worst outcome is
+     * an unreferenced file in the store, which is invisible and sweepable - the opposite order
+     * risks a profile pointing at a photograph that no longer exists.
+     */
+    private void replaceMedia(StorageArea area, FileContent content, String previousUrl,
+                              Consumer<String> attach) {
+        String storageKey = fileStorage.store(area, content);
+        attach.accept(MediaUrls.urlFor(storageKey));
+        deleteMedia(previousUrl);
+    }
+
+    /**
+     * Removes a file the profile used to point at, if it was one of ours.
+     *
+     * <p>A URL that is not a media URL is left alone rather than treated as an error: it is not
+     * a key, so there is nothing to delete, and guessing would mean deleting something else.
+     */
+    private void deleteMedia(String previousUrl) {
+        MediaUrls.keyFrom(previousUrl).ifPresent(fileStorage::delete);
     }
 
     private TutorProfileDto toDto(TutorProfile profile, Language language) {

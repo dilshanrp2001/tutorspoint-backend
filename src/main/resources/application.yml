@@ -45,6 +45,8 @@ spring:
 
   servlet:
     multipart:
+      # The container's ceiling. Each upload has its own, lower limit in StorageArea; this
+      # one exists so an oversized body is refused before it is read into memory at all.
       max-file-size: 5MB
       max-request-size: 10MB
 

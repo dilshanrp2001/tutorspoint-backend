@@ -8,8 +8,15 @@ import com.tutorspoint.common.domain.ClassFormat;
 import com.tutorspoint.common.domain.Language;
 import com.tutorspoint.common.domain.Medium;
 import com.tutorspoint.common.exception.BusinessRuleViolationException;
+import com.tutorspoint.common.exception.InvalidUploadException;
 import com.tutorspoint.common.exception.ResourceNotFoundException;
 import com.tutorspoint.common.exception.UnauthorizedActionException;
+import com.tutorspoint.common.storage.FileContent;
+import com.tutorspoint.common.storage.FileStorage;
+import com.tutorspoint.common.storage.FileType;
+import com.tutorspoint.common.storage.ImageSanitiser;
+import com.tutorspoint.common.storage.StorageArea;
+import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.reference.ReferenceLabels;
 import com.tutorspoint.reference.domain.Area;
 import com.tutorspoint.reference.domain.ExamLevel;
@@ -61,6 +68,8 @@ class TutorProfileServiceImplTest {
 
     private static final Long TUTOR_ID = 7L;
     private static final Long OTHER_ID = 8L;
+    private static final String PHOTO_KEY = "photos/2026/09/3f1b0c62-9d0e-4a3f-8b1a-6f2d4c7e5a90.jpg";
+    private static final String PHOTO_URL = "/api/media/" + PHOTO_KEY;
 
     @Mock
     private UserRepository users;
@@ -84,6 +93,12 @@ class TutorProfileServiceImplTest {
     private ReferenceLabels referenceLabels;
 
     @Mock
+    private FileStorage fileStorage;
+
+    @Mock
+    private ImageSanitiser imageSanitiser;
+
+    @Mock
     private CurrentUser currentUser;
 
     /** Real, not mocked: generated code with no collaborators, and stubbing it would leave
@@ -98,7 +113,7 @@ class TutorProfileServiceImplTest {
     void setUp() {
         tutor = new Tutor("kasun@example.lk", "hash", "Kasun Perera", "+94771234567", Language.EN);
         service = new TutorProfileServiceImpl(users, profiles, subjects, examLevels, syllabuses, areas,
-                tutorMapper, referenceLabels, currentUser);
+                tutorMapper, referenceLabels, fileStorage, imageSanitiser, currentUser);
         lenient().when(currentUser.requireId()).thenReturn(TUTOR_ID);
         lenient().when(referenceLabels.mediums(anyCollection(), any())).thenReturn(List.of());
         lenient().when(referenceLabels.classFormats(anyCollection(), any())).thenReturn(List.of());
@@ -157,7 +172,7 @@ class TutorProfileServiceImplTest {
     @Test
     @DisplayName("a saved draft resolves every code to its reference row and stays a draft")
     void savesTheDraft() {
-        TutorProfile profile = existingProfile();
+        TutorProfile profile = profileWithPhoto();
         when(profiles.findByTutorId(TUTOR_ID)).thenReturn(Optional.of(profile));
         when(subjects.findByCodeInAndActiveTrue(Set.of("CHEMISTRY"))).thenReturn(List.of(subject()));
         when(examLevels.findByCodeInAndActiveTrue(Set.of("GCE_AL"))).thenReturn(List.of(examLevel()));
@@ -238,6 +253,67 @@ class TutorProfileServiceImplTest {
     }
 
     @Test
+    @DisplayName("a photo is re-encoded before it is stored, and the profile points at the stored file")
+    void photoIsSanitisedThenStored() {
+        TutorProfile profile = existingProfile();
+        when(profiles.findByTutorId(TUTOR_ID)).thenReturn(Optional.of(profile));
+        FileContent sanitised = new FileContent(FileType.JPEG, new byte[]{1, 2, 3});
+        when(imageSanitiser.sanitise(any(FileContent.class))).thenReturn(sanitised);
+        when(fileStorage.store(StorageArea.PROFILE_PHOTOS, sanitised)).thenReturn(PHOTO_KEY);
+
+        var dto = service.uploadPhoto(new UploadedFile("holiday.jpg", jpegBytes()), Language.EN);
+
+        assertThat(dto.photoUrl()).isEqualTo(PHOTO_URL);
+        // The bytes that reach the store are the sanitiser's, never the ones that were sent.
+        verify(fileStorage).store(StorageArea.PROFILE_PHOTOS, sanitised);
+        assertThat(dto.missingFields()).doesNotContain("PHOTO");
+    }
+
+    @Test
+    @DisplayName("replacing a photo deletes the file it replaced")
+    void replacingAPhotoDeletesTheOldFile() {
+        TutorProfile profile = profileWithPhoto();
+        when(profiles.findByTutorId(TUTOR_ID)).thenReturn(Optional.of(profile));
+        FileContent sanitised = new FileContent(FileType.JPEG, new byte[]{1, 2, 3});
+        when(imageSanitiser.sanitise(any(FileContent.class))).thenReturn(sanitised);
+        when(fileStorage.store(StorageArea.PROFILE_PHOTOS, sanitised))
+                .thenReturn("photos/2026/09/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jpg");
+
+        service.uploadPhoto(new UploadedFile("newer.jpg", jpegBytes()), Language.EN);
+
+        verify(fileStorage).delete(PHOTO_KEY);
+    }
+
+    @Test
+    @DisplayName("a file that is not an image is refused before anything is stored")
+    void refusesANonImagePhoto() {
+        when(profiles.findByTutorId(TUTOR_ID)).thenReturn(Optional.of(existingProfile()));
+
+        UploadedFile pdf = new UploadedFile("certificate.pdf", pdfBytes());
+
+        assertThatExceptionOfType(InvalidUploadException.class)
+                .isThrownBy(() -> service.uploadPhoto(pdf, Language.EN))
+                .satisfies(thrown -> assertThat(thrown.getCode())
+                        .isEqualTo(InvalidUploadException.TYPE_NOT_ALLOWED));
+
+        verify(fileStorage, never()).store(any(), any());
+        verify(imageSanitiser, never()).sanitise(any());
+    }
+
+    @Test
+    @DisplayName("removing a photo deletes the file and makes the profile incomplete again")
+    void removingAPhotoDeletesTheFile() {
+        TutorProfile profile = profileWithPhoto();
+        when(profiles.findByTutorId(TUTOR_ID)).thenReturn(Optional.of(profile));
+
+        var dto = service.removePhoto(Language.EN);
+
+        assertThat(dto.photoUrl()).isNull();
+        assertThat(dto.missingFields()).contains("PHOTO");
+        verify(fileStorage).delete(PHOTO_KEY);
+    }
+
+    @Test
     @DisplayName("the public read asks for a published profile, so a draft is simply not found")
     void publicReadFiltersOnStatusInTheQuery() {
         when(profiles.findByTutorIdAndStatus(TUTOR_ID, ProfileStatus.PUBLISHED)).thenReturn(Optional.empty());
@@ -267,9 +343,17 @@ class TutorProfileServiceImplTest {
         return new TutorProfile(tutor);
     }
 
+    /** A profile whose photo has already been uploaded, which a draft save can no longer do. */
+    private TutorProfile profileWithPhoto() {
+        TutorProfile profile = existingProfile();
+        profile.attachPhoto(PHOTO_URL);
+        return profile;
+    }
+
     private TutorProfile completeProfile() {
         TutorProfile profile = existingProfile();
-        profile.describe("A/L Chemistry", "Fifteen years of A/L Chemistry.", "https://cdn.example.lk/p.jpg", null);
+        profile.describe("A/L Chemistry", "Fifteen years of A/L Chemistry.");
+        profile.attachPhoto(PHOTO_URL);
         profile.teaches(Set.of(subject()), Set.of(examLevel()), Set.of(syllabus()), Set.of(Medium.ENGLISH));
         profile.delivers(Set.of(ClassFormat.SMALL_GROUP), true, AvailabilityStatus.ACCEPTING);
         profile.chargesBetween(new BigDecimal("1500"), new BigDecimal("2500"), FeeUnit.PER_MONTH);
@@ -286,8 +370,6 @@ class TutorProfileServiceImplTest {
         return new TutorProfileRequest(
                 "A/L Chemistry in Nugegoda",
                 "Fifteen years preparing students for A/L Chemistry.",
-                "https://cdn.example.lk/photos/kasun.jpg",
-                null,
                 Set.of("CHEMISTRY"),
                 Set.of("GCE_AL"),
                 Set.of("NATIONAL_ENGLISH"),
@@ -306,9 +388,18 @@ class TutorProfileServiceImplTest {
     }
 
     private static TutorProfileRequest requestWithSubjects(Set<String> subjectCodes) {
-        return new TutorProfileRequest(null, null, null, null,
+        return new TutorProfileRequest(null, null,
                 subjectCodes, null, null, null, null, null, null, null, null, null, null, null, null,
                 false, AvailabilityStatus.ACCEPTING);
+    }
+
+    /** A minimal but genuine JPEG signature - what the detector actually looks at. */
+    private static byte[] jpegBytes() {
+        return new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 16, 'J', 'F', 'I', 'F'};
+    }
+
+    private static byte[] pdfBytes() {
+        return "%PDF-1.4 not really a pdf".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
     private static Subject subject() {

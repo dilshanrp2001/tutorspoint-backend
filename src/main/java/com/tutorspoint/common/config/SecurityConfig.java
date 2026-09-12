@@ -3,6 +3,7 @@ package com.tutorspoint.common.config;
 import com.tutorspoint.auth.security.JwtAuthenticationFilter;
 import com.tutorspoint.auth.security.RestAccessDeniedHandler;
 import com.tutorspoint.auth.security.RestAuthenticationEntryPoint;
+import com.tutorspoint.common.storage.MediaUrls;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -79,6 +80,12 @@ public class SecurityConfig {
                         // only, so the tutor's own /api/tutors/me/profile routes are not
                         // matched here and stay behind the token.
                         .requestMatchers(HttpMethod.GET, "/api/tutors/*").permitAll()
+                        // Profile photographs and intro videos, which are part of a public
+                        // profile and therefore public themselves. The endpoint behind this
+                        // serves only the public storage areas: a qualification document is
+                        // reachable solely through /api/documents/{id}, which authorises every
+                        // read and is deliberately not matched here.
+                        .requestMatchers(HttpMethod.GET, MediaUrls.BASE_PATH + "**").permitAll()
                         .anyRequest().authenticated())
                 // Errors inside the chain still return the standard envelope: a client should
                 // not have to parse two error shapes depending on how far its request got.

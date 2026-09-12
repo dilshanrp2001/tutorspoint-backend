@@ -45,6 +45,12 @@ tutorspoint:
     jwt:
       secret: ${JWT_SECRET}
 
+  storage:
+    local:
+      # A mounted volume, with no default on purpose. A path inside the container would
+      # accept every upload and lose all of them on the next deployment.
+      root: ${STORAGE_ROOT}
+
 # Swagger is not exposed in production.
 springdoc:
   api-docs:

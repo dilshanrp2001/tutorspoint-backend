@@ -12,6 +12,13 @@ spring:
     port: 3025
 
 tutorspoint:
+  storage:
+    local:
+      # A throwaway directory per JVM. Integration tests write real files through the real
+      # LocalDiskFileStorage - stubbing the store would leave the upload path untested at
+      # exactly the point where it touches something outside the process.
+      root: ${java.io.tmpdir}/tutorspoint-test-uploads
+
   security:
     jwt:
       # A fixed throwaway key, base64 of 32 bytes. Tests must sign and verify real tokens;

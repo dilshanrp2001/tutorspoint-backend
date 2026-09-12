@@ -7,10 +7,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -73,6 +78,50 @@ public class GlobalExceptionHandler {
         log.debug("Unreadable request body: {}", ex.getMessage());
         return respond(HttpStatus.BAD_REQUEST, ApiError.of("MALFORMED_REQUEST",
                 "The request body could not be read. Check the JSON and the allowed values."));
+    }
+
+    /**
+     * The request could not be bound to the handler's parameters: a query or form field that is
+     * absent, or one that cannot be converted - {@code documentType=PASSPORT} against an enum
+     * that does not offer it, an id that is not a number.
+     *
+     * <p>All of it is the caller's mistake, so all of it is a 400. Without these the catch-all
+     * would report a mistyped parameter as a server error and send a client hunting for a fault
+     * that is in its own request. The offending value is not echoed back.
+     */
+    @ExceptionHandler({
+            MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
+            MethodArgumentTypeMismatchException.class,
+            BindException.class})
+    public ResponseEntity<ApiResponse<Void>> handleBadRequestBinding(Exception ex) {
+        log.debug("Unbindable request: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of("MALFORMED_REQUEST",
+                "The request is missing a required value, or one of them is not a value this endpoint accepts."));
+    }
+
+    /**
+     * The container refused an upload before the handler saw it, because the multipart limits in
+     * {@code application.yml} were exceeded.
+     *
+     * <p>Handled here so an oversized file gets the same code and the same envelope as one this
+     * application rejects itself - a client should not have to tell the two apart to know that
+     * the file was too big.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        log.debug("Upload rejected as too large: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of(InvalidUploadException.TOO_LARGE,
+                "The uploaded file is larger than this endpoint accepts"));
+    }
+
+    /**
+     * A file the platform will not take: the wrong format, or over the limit for that upload.
+     */
+    @ExceptionHandler(InvalidUploadException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidUpload(InvalidUploadException ex) {
+        log.debug("Upload rejected: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of(ex.getCode(), ex.getMessage()));
     }
 
     /**

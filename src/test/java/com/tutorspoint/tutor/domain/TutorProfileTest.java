@@ -40,6 +40,8 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
  */
 class TutorProfileTest {
 
+    private static final String PHOTO_URL = "/api/media/photos/2026/09/"
+            + "3f1b0c62-9d0e-4a3f-8b1a-6f2d4c7e5a90.jpg";
     private static final BigDecimal FEE_MIN = new BigDecimal("1500.00");
     private static final BigDecimal FEE_MAX = new BigDecimal("2500.00");
 
@@ -122,15 +124,13 @@ class TutorProfileTest {
         @Test
         @DisplayName("without a photo cannot be published")
         void photo() {
-            assertMissing(ProfileField.PHOTO,
-                    profile -> profile.describe("A/L Chemistry", "Fifteen years of A/L Chemistry.", null, null));
+            assertMissing(ProfileField.PHOTO, TutorProfile::removePhoto);
         }
 
         @Test
         @DisplayName("without a bio cannot be published")
         void bio() {
-            assertMissing(ProfileField.BIO,
-                    profile -> profile.describe("A/L Chemistry", "   ", "https://cdn.example.lk/p.jpg", null));
+            assertMissing(ProfileField.BIO, profile -> profile.describe("A/L Chemistry", "   "));
         }
 
         @Test
@@ -277,7 +277,8 @@ class TutorProfileTest {
             assertThat(profile.isPublished()).isFalse();
             assertRefusedAsSuspended(profile::publish);
             assertRefusedAsSuspended(profile::unpublish);
-            assertRefusedAsSuspended(() -> profile.describe("New", "New bio", "https://cdn.example.lk/p.jpg", null));
+            assertRefusedAsSuspended(() -> profile.describe("New", "New bio"));
+            assertRefusedAsSuspended(() -> profile.attachPhoto("/api/media/photos/2026/09/x.jpg"));
             assertRefusedAsSuspended(() -> profile.recordExperience(20));
         }
 
@@ -429,6 +430,59 @@ class TutorProfileTest {
     }
 
     @Nested
+    @DisplayName("the photograph")
+    class Photograph {
+
+        @Test
+        @DisplayName("is attached by the upload endpoint, not by a draft save")
+        void isAttachedSeparately() {
+            TutorProfile profile = new TutorProfile(tutor());
+
+            profile.describe("A/L Chemistry", "Fifteen years of A/L Chemistry.");
+            assertThat(profile.missingFields()).contains(ProfileField.PHOTO);
+
+            profile.attachPhoto(PHOTO_URL);
+            assertThat(profile.getPhotoUrl()).isEqualTo(PHOTO_URL);
+            assertThat(profile.missingFields()).doesNotContain(ProfileField.PHOTO);
+        }
+
+        @Test
+        @DisplayName("cannot be attached as a blank value")
+        void refusesABlankUrl() {
+            TutorProfile profile = new TutorProfile(tutor());
+
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.attachPhoto("  "));
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.attachPhoto(null));
+        }
+
+        @Test
+        @DisplayName("removing it takes a published profile back out of completeness")
+        void removingItMakesTheProfileIncomplete() {
+            TutorProfile profile = complete();
+            profile.publish();
+
+            profile.removePhoto();
+
+            assertThat(profile.isComplete()).isFalse();
+            assertThat(profile.missingFields()).containsExactly(ProfileField.PHOTO);
+        }
+
+        @Test
+        @DisplayName("the intro video is optional and never affects publishing")
+        void theVideoIsOptional() {
+            TutorProfile profile = complete();
+
+            profile.attachIntroVideo("/api/media/videos/2026/09/"
+                    + "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d.mp4");
+            assertThat(profile.isComplete()).isTrue();
+
+            profile.removeIntroVideo();
+            assertThat(profile.getIntroVideoUrl()).isNull();
+            assertThat(profile.isComplete()).isTrue();
+        }
+    }
+
+    @Nested
     @DisplayName("the verified badge")
     class Verification {
 
@@ -482,10 +536,8 @@ class TutorProfileTest {
     /** A profile with every one of the eight requirements satisfied. */
     private static TutorProfile complete() {
         TutorProfile profile = new TutorProfile(tutor());
-        profile.describe("A/L Chemistry in Nugegoda",
-                "Fifteen years preparing students for A/L Chemistry.",
-                "https://cdn.example.lk/photos/kasun.jpg",
-                null);
+        profile.describe("A/L Chemistry in Nugegoda", "Fifteen years preparing students for A/L Chemistry.");
+        profile.attachPhoto(PHOTO_URL);
         profile.teaches(Set.of(subject()), Set.of(examLevel()), Set.of(syllabus()), Set.of(Medium.ENGLISH));
         profile.delivers(Set.of(ClassFormat.SMALL_GROUP), false, AvailabilityStatus.LIMITED);
         profile.servesAreas(area(), Set.of(area()), 15);

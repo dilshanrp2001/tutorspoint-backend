@@ -42,3 +42,6 @@ build/
 application-local.yml
 application-local.properties
 src/main/resources/application-local.yml
+
+### Uploaded files (dev storage root) - user content, never committed ###
+var/

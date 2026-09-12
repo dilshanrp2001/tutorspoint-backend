@@ -2,7 +2,9 @@ package com.tutorspoint.tutor;
 
 import com.tutorspoint.common.domain.Language;
 import com.tutorspoint.common.exception.BusinessRuleViolationException;
+import com.tutorspoint.common.exception.InvalidUploadException;
 import com.tutorspoint.common.exception.ResourceNotFoundException;
+import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.tutor.dto.TutorProfileDto;
 import com.tutorspoint.tutor.dto.TutorProfileRequest;
 
@@ -57,6 +59,32 @@ public interface TutorProfileService {
      * @throws BusinessRuleViolationException if the profile is not currently published
      */
     TutorProfileDto unpublishMyProfile(Language language);
+
+    /**
+     * Replaces the caller's profile photograph (FR-T1).
+     *
+     * <p>The stored file is not the file that was sent: it is decoded and written again, which
+     * is what removes the Exif block - and with it the GPS coordinates a phone camera puts in a
+     * photograph by default. A profile photo is public, so that is not optional. The previous
+     * photograph is deleted.
+     *
+     * @throws InvalidUploadException if the bytes are not a JPEG or PNG, or the file is over
+     *                                the limit - judged from the content, not the filename
+     */
+    TutorProfileDto uploadPhoto(UploadedFile file, Language language);
+
+    /** Removes the photograph, which makes the profile incomplete again. */
+    TutorProfileDto removePhoto(Language language);
+
+    /**
+     * Replaces the caller's introduction video (FR-T1).
+     *
+     * @throws InvalidUploadException if the bytes are not an MP4, or the file is over the limit
+     */
+    TutorProfileDto uploadIntroVideo(UploadedFile file, Language language);
+
+    /** Removes the introduction video. Never required, so this cannot make a profile incomplete. */
+    TutorProfileDto removeIntroVideo(Language language);
 
     /**
      * A tutor profile as the public sees it (FR-S4). Open to guests: a parent compares tutors

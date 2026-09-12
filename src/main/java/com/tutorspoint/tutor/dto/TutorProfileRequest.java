@@ -33,6 +33,10 @@ import java.util.Set;
  * <p>Reference values travel as codes, never as ids or names: a code means the same thing in
  * every environment and reads in a log. Unknown codes are rejected by the service, which is
  * the only layer that can know which exist.
+ *
+ * <p>The photograph and the introduction video are deliberately absent. They are set by their
+ * own upload endpoints, which store a file the platform has inspected and re-encoded; a URL
+ * field here would let a draft point the profile photo at any address on the internet.
  */
 public record TutorProfileRequest(
 
@@ -41,12 +45,6 @@ public record TutorProfileRequest(
 
         @Size(max = TutorProfileValidation.BIO_MAX, message = "{validation.profile.bio.size}")
         String bio,
-
-        @Size(max = TutorProfileValidation.URL_MAX, message = "{validation.profile.photo-url.size}")
-        String photoUrl,
-
-        @Size(max = TutorProfileValidation.URL_MAX, message = "{validation.profile.intro-video-url.size}")
-        String introVideoUrl,
 
         @Size(max = TutorProfileValidation.MAX_SUBJECTS, message = "{validation.profile.subjects.size}")
         Set<String> subjectCodes,

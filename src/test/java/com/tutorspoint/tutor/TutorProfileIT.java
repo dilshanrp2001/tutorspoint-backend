@@ -7,12 +7,14 @@ import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.UserRepository;
 import com.tutorspoint.auth.security.JwtService;
 import com.tutorspoint.common.domain.Language;
+import com.tutorspoint.common.storage.TestFiles;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -101,7 +104,7 @@ class TutorProfileIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("one tutor cannot publish or unpublish another tutor's profile, because no route names one")
     void publishingActsOnlyOnTheCallersProfile() throws Exception {
-        saveDraft(tutorToken, completeDraft());
+        completeProfile(tutorToken);
 
         mockMvc.perform(post("/api/tutors/me/profile/publish").header("Authorization", bearer(tutorToken)))
                 .andExpect(status().isOk())
@@ -145,7 +148,7 @@ class TutorProfileIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("the public endpoint shows a published profile to a guest, with no email and no phone number")
     void publicProfileHidesContactDetails() throws Exception {
-        saveDraft(tutorToken, completeDraft());
+        completeProfile(tutorToken);
         publish(tutorToken);
 
         String body = mockMvc.perform(get("/api/tutors/" + tutorId))
@@ -186,7 +189,7 @@ class TutorProfileIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("an unpublished profile disappears from the public endpoint and keeps its content")
     void unpublishingTakesTheProfileDown() throws Exception {
-        saveDraft(tutorToken, completeDraft());
+        completeProfile(tutorToken);
         publish(tutorToken);
         mockMvc.perform(get("/api/tutors/" + tutorId)).andExpect(status().isOk());
 
@@ -210,7 +213,7 @@ class TutorProfileIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("saving a draft leaves a published profile published")
     void savingDoesNotUnpublish() throws Exception {
-        saveDraft(tutorToken, completeDraft());
+        completeProfile(tutorToken);
         publish(tutorToken);
 
         saveDraft(tutorToken, completeDraft().replace("A/L Chemistry in Nugegoda", "A/L Chemistry in Maharagama"));
@@ -284,13 +287,31 @@ class TutorProfileIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("reference values come back in the language the caller asked for")
     void profileRendersInTheCallersLanguage() throws Exception {
-        saveDraft(tutorToken, completeDraft());
+        completeProfile(tutorToken);
         publish(tutorToken);
 
         mockMvc.perform(get("/api/tutors/" + tutorId).header("Accept-Language", "si"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.mediums[0].code").value("ENGLISH"))
                 .andExpect(jsonPath("$.data.mediums[0].name").value("ඉංග්‍රීසි"));
+    }
+
+    /**
+     * Everything publishing needs: the draft, and a photograph through the upload endpoint.
+     *
+     * <p>Two calls rather than one, because the photo is no longer a field on the draft - it is
+     * a file the platform inspects, re-encodes and stores before the profile may point at it.
+     */
+    private void completeProfile(String token) throws Exception {
+        saveDraft(token, completeDraft());
+        uploadPhoto(token);
+    }
+
+    private void uploadPhoto(String token) throws Exception {
+        mockMvc.perform(multipart("/api/tutors/me/profile/photo")
+                        .file(new MockMultipartFile("file", "kasun.jpg", "image/jpeg", TestFiles.jpeg()))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
     }
 
     private void saveDraft(String token, String body) throws Exception {
@@ -312,7 +333,6 @@ class TutorProfileIT extends AbstractIntegrationTest {
                 {
                   "headline": "A/L Chemistry in Nugegoda",
                   "bio": "Fifteen years preparing students for A/L Chemistry.",
-                  "photoUrl": "https://cdn.example.lk/photos/kasun.jpg",
                   "subjectCodes": ["CHEMISTRY"],
                   "examLevelCodes": ["GCE_AL"],
                   "syllabusCodes": ["NATIONAL_ENGLISH", "CAMBRIDGE"],
