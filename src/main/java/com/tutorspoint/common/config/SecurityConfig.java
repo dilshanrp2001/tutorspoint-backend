@@ -71,6 +71,9 @@ public class SecurityConfig {
                         // are willing to send the Authorization header on the real one.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
+                        // Reference data is the vocabulary of the search form, and search is
+                        // open to guests. Readable without a token; writable by nobody.
+                        .requestMatchers(HttpMethod.GET, "/api/reference", "/api/reference/**").permitAll()
                         .anyRequest().authenticated())
                 // Errors inside the chain still return the standard envelope: a client should
                 // not have to parse two error shapes depending on how far its request got.
