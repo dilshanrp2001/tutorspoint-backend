@@ -12,6 +12,12 @@ spring:
     port: 3025
 
 tutorspoint:
+  security:
+    jwt:
+      # A fixed throwaway key, base64 of 32 bytes. Tests must sign and verify real tokens;
+      # nothing this key protects exists outside the test JVM.
+      secret: dGVzdC1vbmx5LXNpZ25pbmcta2V5LW5vdC1hLXNlY3JldCE=
+
   notification:
     email:
       from: no-reply@tutorspoint.test

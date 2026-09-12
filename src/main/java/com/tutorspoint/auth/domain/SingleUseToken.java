@@ -91,11 +91,15 @@ public abstract class SingleUseToken extends BaseEntity {
     }
 
     /**
-     * Redeems the secret. Nothing may redeem it twice.
+     * Asserts the secret could be redeemed right now, naming the reason it cannot.
+     *
+     * <p>{@link #isRedeemable} answers the same question as a boolean; this is for the
+     * caller that has already decided a failure is an error, so that the user is told
+     * <em>why</em> — "that code expired" rather than "that code is wrong".
      *
      * @throws BusinessRuleViolationException if it is spent, expired, or out of attempts
      */
-    public void consume(Instant now) {
+    public void ensureRedeemable(Instant now) {
         if (isConsumed()) {
             throw new BusinessRuleViolationException(errorKey("ALREADY_USED"),
                     "This %s has already been used".formatted(describe()));
@@ -108,6 +112,15 @@ public abstract class SingleUseToken extends BaseEntity {
             throw new BusinessRuleViolationException(errorKey("ATTEMPTS_EXCEEDED"),
                     "Too many failed attempts on this %s".formatted(describe()));
         }
+    }
+
+    /**
+     * Redeems the secret. Nothing may redeem it twice.
+     *
+     * @throws BusinessRuleViolationException if it is spent, expired, or out of attempts
+     */
+    public void consume(Instant now) {
+        ensureRedeemable(now);
         this.consumedAt = now;
     }
 

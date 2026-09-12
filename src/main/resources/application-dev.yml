@@ -36,8 +36,8 @@ tutorspoint:
 
   security:
     jwt:
+      # Base64-encoded 256-bit key: openssl rand -base64 32
       secret: ${JWT_SECRET}
-      expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
 
 logging:
   level:

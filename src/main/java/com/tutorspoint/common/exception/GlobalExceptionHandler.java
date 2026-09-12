@@ -5,6 +5,8 @@ import com.tutorspoint.common.api.ApiResponse.ApiError;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -34,6 +36,12 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.CONFLICT, ApiError.of(ex.getCode(), ex.getMessage()));
     }
 
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthenticationFailed(AuthenticationFailedException ex) {
+        log.debug("Authentication failed: {}", ex.getMessage());
+        return respond(HttpStatus.UNAUTHORIZED, ApiError.of(ex.getCode(), ex.getMessage()));
+    }
+
     @ExceptionHandler(UnauthorizedActionException.class)
     public ResponseEntity<ApiResponse<Void>> handleUnauthorizedAction(UnauthorizedActionException ex) {
         log.warn("Unauthorized action: {}", ex.getMessage());
@@ -49,6 +57,34 @@ public class GlobalExceptionHandler {
         }
         return respond(HttpStatus.BAD_REQUEST,
                 ApiError.withFields("VALIDATION_FAILED", "Request validation failed", fieldErrors));
+    }
+
+    /**
+     * The body could not be read at all: malformed JSON, or a value outside what the DTO can
+     * hold — {@code "role": "ADMIN"} against an enum that offers only TUTOR and PARENT.
+     *
+     * <p>That is the caller's mistake, so it is a 400. Without this it would reach the
+     * catch-all and be reported as a server error, which would send a client looking for a
+     * fault that is in its own request. The cause is deliberately not echoed: it carries
+     * internal type names and the offending input.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        log.debug("Unreadable request body: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of("MALFORMED_REQUEST",
+                "The request body could not be read. Check the JSON and the allowed values."));
+    }
+
+    /**
+     * Raised by {@code @PreAuthorize} when a method-level rule rejects an authenticated
+     * caller. Without this, Spring Security's own 403 page would bypass the standard
+     * error envelope that every other failure returns.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        return respond(HttpStatus.FORBIDDEN,
+                ApiError.of("ACCESS_DENIED", "You are not allowed to perform this action"));
     }
 
     /**

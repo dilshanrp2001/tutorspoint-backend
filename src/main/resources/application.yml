@@ -85,6 +85,29 @@ springdoc:
     tags-sorter: alpha
     display-request-duration: true
 
+# Auth policy. Not secrets and not environment-specific, so the values live here; the
+# signing key and the database credentials come from the environment (see the dev/prod files).
+tutorspoint:
+  security:
+    jwt:
+      issuer: tutorspoint
+      # Short, because nothing can revoke an access token before it expires. The client
+      # refreshes silently; the user notices nothing.
+      access-token-ttl: 15m
+      # Long, because this is what keeps a user signed in — and it is revocable, rotated on
+      # every use, and stored only as a digest.
+      refresh-token-ttl: 30d
+  auth:
+    email-verification-ttl: 24h
+    password-reset-ttl: 30m
+    otp-ttl: 5m
+    # Every SMS costs money (see the cost note in the development plan).
+    max-otp-sends-per-hour: 3
+    # The emailed links point at frontend pages, which post the token to the API. A token in
+    # a GET query string would end up in browser history and proxy logs.
+    verify-email-url: ${FRONTEND_BASE_URL:http://localhost:5173}/verify-email
+    reset-password-url: ${FRONTEND_BASE_URL:http://localhost:5173}/reset-password
+
 logging:
   level:
     com.tutorspoint: INFO

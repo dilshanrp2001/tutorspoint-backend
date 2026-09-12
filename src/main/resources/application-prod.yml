@@ -35,10 +35,15 @@ tutorspoint:
         api-key: ${SMS_NOTIFY_LK_API_KEY}
         sender-id: ${SMS_NOTIFY_LK_SENDER_ID}
 
+  auth:
+    # No dev fallback here, unlike application.yml: a verification link pointing at
+    # localhost in production would be silently useless.
+    verify-email-url: ${FRONTEND_BASE_URL}/verify-email
+    reset-password-url: ${FRONTEND_BASE_URL}/reset-password
+
   security:
     jwt:
       secret: ${JWT_SECRET}
-      expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
 
 # Swagger is not exposed in production.
 springdoc:

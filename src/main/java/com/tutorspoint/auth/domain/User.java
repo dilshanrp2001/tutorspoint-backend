@@ -163,6 +163,12 @@ public abstract class User extends BaseEntity {
         this.passwordHash = requireText(newPasswordHash, "newPasswordHash");
     }
 
+    /** Corrects the display name. Not an identity change: email and phone are untouched. */
+    public void changeFullName(String fullName) {
+        ensureNotDeleted();
+        this.fullName = requireText(fullName, "fullName").trim();
+    }
+
     public void changePreferredLanguage(Language language) {
         ensureNotDeleted();
         this.preferredLanguage = required(language, "language");
