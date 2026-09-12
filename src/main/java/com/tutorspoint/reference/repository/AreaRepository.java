@@ -4,6 +4,7 @@ import com.tutorspoint.reference.domain.Area;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,4 +36,19 @@ public interface AreaRepository extends JpaRepository<Area, Long> {
     List<Area> findActiveDistrictsWithTowns();
 
     Optional<Area> findByCode(String code);
+
+    /**
+     * The active values behind a set of codes, for resolving what a tutor selected in the
+     * profile wizard.
+     *
+     * <p>Active only, deliberately: a retired value may stay on the profiles that already
+     * reference it, but nothing new may be built from one. The caller compares the size of the
+     * result against the size of the request to find out which codes were rejected - a query
+     * that returns four rows for five codes has said which is unknown, without a round trip
+     * per code.
+     */
+    List<Area> findByCodeInAndActiveTrue(Collection<String> codes);
+
+    /** One active area by code - the home base a tutor teaches from. */
+    Optional<Area> findByCodeAndActiveTrue(String code);
 }

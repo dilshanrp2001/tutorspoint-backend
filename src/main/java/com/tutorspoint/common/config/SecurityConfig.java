@@ -74,6 +74,11 @@ public class SecurityConfig {
                         // Reference data is the vocabulary of the search form, and search is
                         // open to guests. Readable without a token; writable by nobody.
                         .requestMatchers(HttpMethod.GET, "/api/reference", "/api/reference/**").permitAll()
+                        // A published tutor profile is the product: a parent compares tutors
+                        // before deciding whether to register at all (FR-S4). One path segment
+                        // only, so the tutor's own /api/tutors/me/profile routes are not
+                        // matched here and stay behind the token.
+                        .requestMatchers(HttpMethod.GET, "/api/tutors/*").permitAll()
                         .anyRequest().authenticated())
                 // Errors inside the chain still return the standard envelope: a client should
                 // not have to parse two error shapes depending on how far its request got.
