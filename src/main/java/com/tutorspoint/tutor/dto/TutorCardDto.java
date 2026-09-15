@@ -50,5 +50,10 @@ public record TutorCardDto(
 
         AvailabilityStatus availabilityStatus,
 
-        boolean verified) {
+        boolean verified,
+
+        /* Null until the first review; the client shows "new" rather than zero stars. */
+        BigDecimal averageRating,
+
+        int reviewCount) {
 }

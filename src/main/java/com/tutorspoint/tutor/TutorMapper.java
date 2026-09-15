@@ -47,9 +47,9 @@ public interface TutorMapper {
                                  @Context ReferenceLabels labels);
 
     /**
-     * The search-result form of the same profile. Search itself arrives in Phase 3; the
-     * mapping is written here, with the profile it summarises, so that the two views of a
-     * tutor are defined side by side and cannot drift apart.
+     * The search-result form of the same profile, used by {@code search.SearchMapper}. Written
+     * here, with the profile it summarises, so that the two views of a tutor are defined side
+     * by side and cannot drift apart.
      */
     @Mapping(target = "tutorId", source = "profile.tutor.id")
     @Mapping(target = "fullName", source = "profile.tutor.fullName")

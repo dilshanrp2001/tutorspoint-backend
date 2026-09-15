@@ -69,6 +69,8 @@ public class TutorProfile extends BaseEntity {
     private static final String ERROR_PROFILE_NOT_PUBLISHED = "PROFILE_NOT_PUBLISHED";
     private static final String ERROR_PROFILE_SUSPENDED = "PROFILE_SUSPENDED";
 
+    private static final BigDecimal MAX_RATING = BigDecimal.valueOf(5);
+
     /**
      * The owner. Not optional and not changeable: a profile is created for one tutor and
      * belongs to that tutor for as long as it exists, which is what makes every owner-scoped
@@ -192,6 +194,29 @@ public class TutorProfile extends BaseEntity {
 
     @Column(name = "verified_at")
     private Instant verifiedAt;
+
+    /**
+     * The mean star rating, 1 to 5, or null while nobody has reviewed this tutor. Held here
+     * rather than aggregated per request because search filters and sorts on it (FR-S2);
+     * kept current by {@link #summariseReviews} as reviews arrive in Phase 7.
+     */
+    @Column(name = "average_rating", precision = 3, scale = 2)
+    private BigDecimal averageRating;
+
+    @Column(name = "review_count", nullable = false)
+    private int reviewCount;
+
+    /**
+     * The keyword-search document (FR-S7), written by a database trigger from the headline,
+     * the bio and the names of the subjects taught - see {@code V7__tutor_search.sql}.
+     *
+     * <p>Mapped only so a search query can refer to it. Nothing in Java reads it or writes it,
+     * hence no getter, and the column is excluded from every insert and update: the trigger
+     * owns it, and a stale copy flushed back from here would undo the trigger's work.
+     */
+    @Getter(AccessLevel.NONE)
+    @Column(name = "search_document", columnDefinition = "tsvector", insertable = false, updatable = false)
+    private String searchDocument;
 
     /**
      * An empty draft for a tutor who has just reached the wizard. Everything optional starts
@@ -402,6 +427,30 @@ public class TutorProfile extends BaseEntity {
     public void revokeVerification() {
         this.verified = false;
         this.verifiedAt = null;
+    }
+
+    /**
+     * Records what the tutor's reviews add up to (FR-R1, Phase 7). The review module computes
+     * the figures; the profile only refuses a pair that cannot be true.
+     *
+     * @throws IllegalArgumentException if the count is negative, an average is given with no
+     *                                  reviews or withheld with some, or it is off the 1-5 scale
+     */
+    public void summariseReviews(BigDecimal averageRating, int reviewCount) {
+        if (reviewCount < 0) {
+            throw new IllegalArgumentException("reviewCount must not be negative, was " + reviewCount);
+        }
+        if ((reviewCount == 0) != (averageRating == null)) {
+            throw new IllegalArgumentException(
+                    "An average rating needs at least one review, and reviews need an average; got %s from %d"
+                            .formatted(averageRating, reviewCount));
+        }
+        if (averageRating != null
+                && (averageRating.compareTo(BigDecimal.ONE) < 0 || averageRating.compareTo(MAX_RATING) > 0)) {
+            throw new IllegalArgumentException("averageRating must be between 1 and 5, was " + averageRating);
+        }
+        this.averageRating = averageRating;
+        this.reviewCount = reviewCount;
     }
 
     // ---------------------------------------------------------------------

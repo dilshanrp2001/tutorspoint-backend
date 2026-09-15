@@ -45,6 +45,12 @@ tutorspoint:
       # production mounts a volume instead (see application-prod.yml).
       root: ${STORAGE_ROOT:./var/uploads}
 
+  seed:
+    # Demo tutors with published profiles, so search has a realistic volume to work on
+    # (DemoTutorSeedRunner). Runs once: skipped when the demo tutors already exist.
+    # SEED_DEMO_TUTORS=0 keeps the local directory empty.
+    demo-tutors: ${SEED_DEMO_TUTORS:500}
+
 logging:
   level:
     com.tutorspoint: DEBUG

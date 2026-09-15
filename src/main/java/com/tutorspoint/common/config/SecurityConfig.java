@@ -80,6 +80,9 @@ public class SecurityConfig {
                         // only, so the tutor's own /api/tutors/me/profile routes are not
                         // matched here and stay behind the token.
                         .requestMatchers(HttpMethod.GET, "/api/tutors/*").permitAll()
+                        // Search, for the same reason: looking costs nothing and needs no
+                        // account. What it can return is limited by the query, not the caller.
+                        .requestMatchers(HttpMethod.GET, "/api/search/**").permitAll()
                         // Profile photographs and intro videos, which are part of a public
                         // profile and therefore public themselves. The endpoint behind this
                         // serves only the public storage areas: a qualification document is

@@ -522,6 +522,56 @@ class TutorProfileTest {
         }
     }
 
+    @Nested
+    @DisplayName("the review summary")
+    class ReviewSummary {
+
+        @Test
+        @DisplayName("starts empty: no reviews and no average, which is not zero stars")
+        void startsUnrated() {
+            TutorProfile profile = new TutorProfile(tutor());
+
+            assertThat(profile.getReviewCount()).isZero();
+            assertThat(profile.getAverageRating()).isNull();
+        }
+
+        @Test
+        @DisplayName("records an average and the count behind it")
+        void recordsTheSummary() {
+            TutorProfile profile = new TutorProfile(tutor());
+
+            profile.summariseReviews(new BigDecimal("4.75"), 12);
+
+            assertThat(profile.getAverageRating()).isEqualByComparingTo("4.75");
+            assertThat(profile.getReviewCount()).isEqualTo(12);
+        }
+
+        @Test
+        @DisplayName("can return to unrated when every review is withdrawn")
+        void canBeCleared() {
+            TutorProfile profile = new TutorProfile(tutor());
+            profile.summariseReviews(new BigDecimal("4.00"), 1);
+
+            profile.summariseReviews(null, 0);
+
+            assertThat(profile.getAverageRating()).isNull();
+            assertThat(profile.getReviewCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("refuses a pair that cannot be true")
+        void refusesImpossibleSummaries() {
+            TutorProfile profile = new TutorProfile(tutor());
+
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.summariseReviews(new BigDecimal("4.00"), 0));
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.summariseReviews(null, 3));
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.summariseReviews(null, -1));
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.summariseReviews(new BigDecimal("0.99"), 3));
+            assertThatIllegalArgumentException().isThrownBy(() -> profile.summariseReviews(new BigDecimal("5.01"), 3));
+            assertThat(profile.getReviewCount()).isZero();
+        }
+    }
+
     @Test
     @DisplayName("belongs only to the tutor it was created for")
     void ownershipIsByTutorId() {

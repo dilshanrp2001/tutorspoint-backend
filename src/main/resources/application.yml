@@ -16,6 +16,9 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+        # Lazy collections load for up to 50 owners per query instead of one query each. A
+        # page of search results would otherwise issue a query per card per list it shows.
+        default_batch_fetch_size: 50
 
   flyway:
     enabled: true

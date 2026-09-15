@@ -57,7 +57,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            String message = error.getDefaultMessage() == null ? "is invalid" : error.getDefaultMessage();
+            // A binding failure - medium=KLINGON against an enum, page=two against a number -
+            // carries Spring's own message, which names internal Java types. Say only that the
+            // value was not accepted.
+            String message = error.isBindingFailure() || error.getDefaultMessage() == null
+                    ? "is invalid"
+                    : error.getDefaultMessage();
             fieldErrors.merge(error.getField(), message, (first, second) -> first + "; " + second);
         }
         return respond(HttpStatus.BAD_REQUEST,
