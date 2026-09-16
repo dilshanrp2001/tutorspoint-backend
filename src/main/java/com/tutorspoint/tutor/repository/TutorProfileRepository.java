@@ -39,4 +39,9 @@ public interface TutorProfileRepository extends JpaRepository<TutorProfile, Long
      * case to handle differently.
      */
     List<TutorProfile> findByTutorIdInAndStatus(Collection<Long> tutorIds, ProfileStatus status);
+
+    /** For the metrics summary: how many profiles are in a state right now. */
+    long countByStatus(ProfileStatus status);
+
+    long countByStatusAndVerifiedTrue(ProfileStatus status);
 }

@@ -328,6 +328,7 @@ class TutorProfileServiceImplTest {
     @Test
     @DisplayName("the public read carries the tutor's name and no way to contact them off-platform")
     void publicReadCarriesNoContactDetails() {
+        activateTutor();
         when(profiles.findByTutorIdAndStatus(TUTOR_ID, ProfileStatus.PUBLISHED))
                 .thenReturn(Optional.of(publishedProfile()));
 
@@ -337,6 +338,24 @@ class TutorProfileServiceImplTest {
         // The proof is structural rather than a value check: TutorProfileDto has no field that
         // could hold either, so this asserts the record itself has not grown one.
         assertThat(dto.toString()).doesNotContain("kasun@example.lk", "+94771234567");
+    }
+
+    @Test
+    @DisplayName("a published profile whose account is suspended is not public: search and the page agree")
+    void aSuspendedAccountIsNotListed() {
+        activateTutor();
+        TutorProfile profile = publishedProfile();
+        tutor.suspend();
+        when(profiles.findByTutorIdAndStatus(TUTOR_ID, ProfileStatus.PUBLISHED)).thenReturn(Optional.of(profile));
+
+        assertThatExceptionOfType(ResourceNotFoundException.class)
+                .isThrownBy(() -> service.publicProfile(TUTOR_ID, Language.EN));
+    }
+
+    private void activateTutor() {
+        tutor.verifyEmail();
+        tutor.verifyPhone();
+        tutor.activate();
     }
 
     private TutorProfile existingProfile() {

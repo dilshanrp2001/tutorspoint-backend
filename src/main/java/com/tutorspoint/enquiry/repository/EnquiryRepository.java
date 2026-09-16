@@ -6,6 +6,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -60,4 +62,48 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
      * arriving at once; this is the readable error.
      */
     boolean existsByParentIdAndTutorIdAndStatusIn(Long parentId, Long tutorId, Collection<EnquiryStatus> statuses);
+
+    /**
+     * Enquiries sent in {@code [from, to)}, leaving out threads moderated as spam - the
+     * denominator of the response rate (OBJ-6). Spam is neither a real enquiry nor one a tutor
+     * should be measured on answering; see {@link EnquiryStatus#SPAM}.
+     */
+    @Query("""
+            select count(e) from Enquiry e
+            where e.createdAt >= :from and e.createdAt < :to and e.status <> :excluded
+            """)
+    long countSent(@Param("from") Instant from, @Param("to") Instant to,
+                   @Param("excluded") EnquiryStatus excluded);
+
+    /**
+     * Of those, the ones the tutor has answered. Keyed on the enquiry's send date, not the reply
+     * date, so the two counts describe the same set of enquiries and their ratio is a rate.
+     */
+    @Query("""
+            select count(e) from Enquiry e
+            where e.createdAt >= :from and e.createdAt < :to and e.status <> :excluded
+              and e.firstResponseAt is not null
+            """)
+    long countResponded(@Param("from") Instant from, @Param("to") Instant to,
+                        @Param("excluded") EnquiryStatus excluded);
+
+    /**
+     * Messages waiting for this parent across every thread they have opened: what the header
+     * badge shows. Counted in the database rather than summed from an inbox page, because a
+     * page is bounded and a reply on an old thread must still be noticed.
+     *
+     * <p>The same rule as {@code Enquiry.unreadCountFor}: unread, and written by somebody else.
+     */
+    @Query("""
+            select count(m) from EnquiryMessage m
+            where m.enquiry.parent.id = :parentId and m.sender.id <> :parentId and m.readAt is null
+            """)
+    long countUnreadForParent(@Param("parentId") Long parentId);
+
+    /** The tutor's side of the same count. */
+    @Query("""
+            select count(m) from EnquiryMessage m
+            where m.enquiry.tutor.id = :tutorId and m.sender.id <> :tutorId and m.readAt is null
+            """)
+    long countUnreadForTutor(@Param("tutorId") Long tutorId);
 }

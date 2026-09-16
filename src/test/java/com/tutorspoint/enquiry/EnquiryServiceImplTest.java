@@ -299,6 +299,22 @@ class EnquiryServiceImplTest {
         assertThat(service.myEnquiries(null, 0, 20, Language.EN).enquiries()).isEmpty();
     }
 
+    @Test
+    @DisplayName("the unread count is asked of the caller's own side, and an administrator has none")
+    void theUnreadCountIsTheCallersOwn() {
+        given(enquiries.countUnreadForParent(PARENT_ID)).willReturn(3L);
+        assertThat(service.unreadCount().unreadCount()).isEqualTo(3);
+
+        given(currentUser.require()).willReturn(new AuthenticatedUser(TUTOR_ID, tutor.getEmail(), Role.TUTOR));
+        given(enquiries.countUnreadForTutor(TUTOR_ID)).willReturn(5L);
+        assertThat(service.unreadCount().unreadCount()).isEqualTo(5);
+
+        given(currentUser.require()).willReturn(new AuthenticatedUser(99L, "admin@tutorspoint.lk", Role.ADMIN));
+        assertThat(service.unreadCount().unreadCount()).isZero();
+        then(enquiries).should(never()).countUnreadForParent(99L);
+        then(enquiries).should(never()).countUnreadForTutor(99L);
+    }
+
     private Enquiry existingThread() {
         Enquiry enquiry = Enquiry.open(parent, tutor, null, subject(), examLevel(),
                 ClassFormat.ONE_TO_ONE, area(), false, "Do you teach on weekends?");

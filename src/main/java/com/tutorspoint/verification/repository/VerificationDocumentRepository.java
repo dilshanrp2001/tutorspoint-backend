@@ -1,6 +1,8 @@
 package com.tutorspoint.verification.repository;
 
+import com.tutorspoint.verification.domain.DocumentStatus;
 import com.tutorspoint.verification.domain.VerificationDocument;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -24,4 +26,11 @@ public interface VerificationDocumentRepository extends JpaRepository<Verificati
     Optional<VerificationDocument> findByIdAndTutorId(Long id, Long tutorId);
 
     long countByTutorId(Long tutorId);
+
+    /** As {@link #findByTutorIdOrderByCreatedAtDesc}, with the reviewer loaded for the admin view. */
+    @EntityGraph(attributePaths = "reviewedBy")
+    List<VerificationDocument> findWithReviewerByTutorIdOrderByCreatedAtDesc(Long tutorId);
+
+    /** The review queue's size, for the metrics summary. */
+    long countByStatus(DocumentStatus status);
 }

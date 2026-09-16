@@ -21,6 +21,7 @@ import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.verification.domain.DocumentStatus;
 import com.tutorspoint.verification.domain.DocumentType;
 import com.tutorspoint.verification.domain.VerificationDocument;
+import com.tutorspoint.verification.event.DocumentViewedByAdminEvent;
 import com.tutorspoint.verification.repository.VerificationDocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.List;
@@ -73,6 +75,9 @@ class VerificationDocumentServiceImplTest {
 
     private final VerificationMapper verificationMapper = new VerificationMapperImpl();
 
+    @Mock
+    private ApplicationEventPublisher events;
+
     private VerificationDocumentServiceImpl service;
 
     private Tutor tutor;
@@ -80,7 +85,8 @@ class VerificationDocumentServiceImplTest {
     @BeforeEach
     void setUp() {
         tutor = new Tutor("kasun@example.lk", "hash", "Kasun Perera", "+94771234567", Language.EN);
-        service = new VerificationDocumentServiceImpl(users, documents, fileStorage, verificationMapper, currentUser);
+        service = new VerificationDocumentServiceImpl(users, documents, fileStorage, verificationMapper, currentUser,
+                events);
         lenient().when(currentUser.requireId()).thenReturn(TUTOR_ID);
     }
 
@@ -238,6 +244,8 @@ class VerificationDocumentServiceImplTest {
 
         assertThat(download.filename()).isEqualTo("degree.pdf");
         assertThat(download.content().bytes()).isEqualTo(TestFiles.pdf());
+        // Reading your own document is not an audited event.
+        verify(events, never()).publishEvent(any());
     }
 
     @Test
@@ -248,6 +256,7 @@ class VerificationDocumentServiceImplTest {
         when(fileStorage.retrieve(STORAGE_KEY)).thenReturn(new FileContent(FileType.PDF, TestFiles.pdf()));
 
         assertThat(service.download(DOCUMENT_ID).content().bytes()).isEqualTo(TestFiles.pdf());
+        verify(events).publishEvent(new DocumentViewedByAdminEvent(ADMIN_ID, DOCUMENT_ID, TUTOR_ID));
     }
 
     @Test

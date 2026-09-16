@@ -8,6 +8,7 @@ import com.tutorspoint.enquiry.dto.EnquiryDetailResponse;
 import com.tutorspoint.enquiry.dto.EnquiryListResponse;
 import com.tutorspoint.enquiry.dto.EnquiryMessageRequest;
 import com.tutorspoint.enquiry.dto.EnquiryRequest;
+import com.tutorspoint.enquiry.dto.EnquiryUnreadCountResponse;
 
 /**
  * On-platform enquiries between a parent and a tutor (FR-E1 - FR-E3).
@@ -47,6 +48,13 @@ public interface EnquiryService {
      * @param status optional filter; null returns every status
      */
     EnquiryListResponse myEnquiries(EnquiryStatus status, int page, int size, Language language);
+
+    /**
+     * Messages waiting for the caller in all of their threads, for the unread badge. Uses the
+     * same rule as the per-thread count in {@link #myEnquiries}, but without a page limit.
+     * An administrator has no inbox, so gets zero.
+     */
+    EnquiryUnreadCountResponse unreadCount();
 
     /**
      * One whole thread, as the caller sees it.

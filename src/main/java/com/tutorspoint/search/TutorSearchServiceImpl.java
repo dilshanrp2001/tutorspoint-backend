@@ -8,6 +8,7 @@ import com.tutorspoint.search.dto.SearchFacets;
 import com.tutorspoint.search.dto.TutorSearchCriteria;
 import com.tutorspoint.search.dto.TutorSearchHit;
 import com.tutorspoint.search.dto.TutorSearchResponse;
+import com.tutorspoint.search.event.TutorSearchPerformedEvent;
 import com.tutorspoint.search.featured.FeaturedTutorLookup;
 import com.tutorspoint.search.ranking.FeaturedPinning;
 import com.tutorspoint.search.ranking.FeaturedPinning.PageSlots;
@@ -21,10 +22,12 @@ import com.tutorspoint.search.repository.TutorSearchRepository;
 import com.tutorspoint.search.repository.TutorSearchSpecifications;
 import com.tutorspoint.tutor.domain.TutorProfile;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,10 @@ import static com.tutorspoint.search.repository.TutorSearchSpecifications.idNotI
  * <p>No {@code @PreAuthorize}: search is public, because a parent compares tutors before
  * deciding whether to register at all. Visibility is enforced by the query, not by the caller's
  * role.
+ *
+ * <p>Each new search is announced with a {@link TutorSearchPerformedEvent}, for the metrics
+ * summary. Only the first page counts: paging through results, or re-sorting them, is the same
+ * search continuing, and counting every page would measure scrolling rather than demand.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,6 +65,8 @@ public class TutorSearchServiceImpl implements TutorSearchService {
     private final FeaturedTutorLookup featuredTutors;
     private final SearchMapper searchMapper;
     private final ReferenceLabels referenceLabels;
+    private final ApplicationEventPublisher events;
+    private final Clock clock;
 
     @Override
     @Transactional(readOnly = true)
@@ -71,6 +80,9 @@ public class TutorSearchServiceImpl implements TutorSearchService {
                 ? List.of()
                 : rankedPage(criteria, matching, totalResults, strategy.order(context), context, language);
 
+        if (criteria.page() == 0) {
+            events.publishEvent(new TutorSearchPerformedEvent(clock.instant()));
+        }
         return new TutorSearchResponse(results, criteria.page(), criteria.size(), totalResults,
                 totalPages(totalResults, criteria.size()), strategy.key(), facets(criteria));
     }

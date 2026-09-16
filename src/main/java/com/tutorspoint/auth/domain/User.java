@@ -41,6 +41,7 @@ public abstract class User extends BaseEntity {
     private static final String ERROR_ACCOUNT_DELETED = "ACCOUNT_DELETED";
     private static final String ERROR_VERIFICATION_INCOMPLETE = "ACCOUNT_VERIFICATION_INCOMPLETE";
     private static final String ERROR_ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE";
+    private static final String ERROR_ACCOUNT_NOT_SUSPENDED = "ACCOUNT_NOT_SUSPENDED";
 
     /** Lower-cased on the way in, so the unique index is genuinely case-insensitive. */
     @Column(name = "email", nullable = false, length = 254)
@@ -129,10 +130,29 @@ public abstract class User extends BaseEntity {
         this.status = AccountStatus.ACTIVE;
     }
 
-    /** Blocks the account (moderation). Reversible through {@link #activate()}. */
+    /** Blocks the account (moderation). Reversible through {@link #reinstate()}. Idempotent. */
     public void suspend() {
         ensureNotDeleted();
         this.status = AccountStatus.SUSPENDED;
+    }
+
+    /**
+     * Lifts a suspension, returning the account to where verification had actually got to.
+     *
+     * <p>Not {@link #activate()}: an account can be suspended before it finished verifying - a
+     * spam registration is the obvious case - and reinstating it must not skip verification, nor
+     * leave it stuck in SUSPENDED because activation refuses. Both channels confirmed means
+     * ACTIVE; anything less means PENDING_VERIFICATION, exactly as if it had never been suspended.
+     *
+     * @throws BusinessRuleViolationException if the account is not suspended, or has been deleted
+     */
+    public void reinstate() {
+        ensureNotDeleted();
+        if (status != AccountStatus.SUSPENDED) {
+            throw new BusinessRuleViolationException(ERROR_ACCOUNT_NOT_SUSPENDED,
+                    "Account %s is %s, not suspended".formatted(getId(), status));
+        }
+        this.status = isFullyVerified() ? AccountStatus.ACTIVE : AccountStatus.PENDING_VERIFICATION;
     }
 
     /**

@@ -5,11 +5,11 @@ package com.tutorspoint.auth.domain;
  * the entity may move an account between these states.
  *
  * <pre>
- *   PENDING_VERIFICATION --activate()--> ACTIVE <--activate()-- SUSPENDED
- *                                          |  \                    ^
- *                                          |   \---- suspend() ----/
- *                                          |
- *                   any state ---- delete() ----> DELETED (terminal)
+ *   PENDING_VERIFICATION --activate()--------------------> ACTIVE
+ *   PENDING_VERIFICATION or ACTIVE --suspend()-----------> SUSPENDED
+ *   SUSPENDED --reinstate(), both channels verified------> ACTIVE
+ *   SUSPENDED --reinstate(), verification unfinished-----> PENDING_VERIFICATION
+ *   any state --delete()---------------------------------> DELETED (terminal)
  * </pre>
  */
 public enum AccountStatus {

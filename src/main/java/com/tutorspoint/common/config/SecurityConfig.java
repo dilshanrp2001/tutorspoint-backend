@@ -89,6 +89,9 @@ public class SecurityConfig {
                         // reachable solely through /api/documents/{id}, which authorises every
                         // read and is deliberately not matched here.
                         .requestMatchers(HttpMethod.GET, MediaUrls.BASE_PATH + "**").permitAll()
+                        // Moderation, verification and metrics. The admin services repeat this
+                        // with @PreAuthorize, so a caller that is not a request is checked too.
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 // Errors inside the chain still return the standard envelope: a client should
                 // not have to parse two error shapes depending on how far its request got.

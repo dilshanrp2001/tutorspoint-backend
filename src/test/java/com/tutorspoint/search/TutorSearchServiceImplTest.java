@@ -8,6 +8,7 @@ import com.tutorspoint.reference.repository.AreaRepository;
 import com.tutorspoint.search.dto.TutorSearchCriteria;
 import com.tutorspoint.search.dto.TutorSearchHit;
 import com.tutorspoint.search.dto.TutorSearchResponse;
+import com.tutorspoint.search.event.TutorSearchPerformedEvent;
 import com.tutorspoint.search.featured.FeaturedTutorLookup;
 import com.tutorspoint.search.ranking.DistanceRanking;
 import com.tutorspoint.search.ranking.ExperienceRanking;
@@ -31,10 +32,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -82,12 +87,18 @@ class TutorSearchServiceImplTest {
     private final RankingStrategyFactory strategies = new RankingStrategyFactory(List.of(
             new RelevanceRanking(), new PriceRanking(), new RatingRanking(), new ExperienceRanking(), new DistanceRanking()));
 
+    @Mock
+    private ApplicationEventPublisher events;
+
+    private static final Instant NOW = Instant.parse("2026-09-16T08:00:00Z");
+
     private TutorSearchServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new TutorSearchServiceImpl(searchRepository, areas, strategies, featuredTutors,
-                new SearchMapperImpl(new TutorMapperImpl()), referenceLabels);
+                new SearchMapperImpl(new TutorMapperImpl()), referenceLabels, events,
+                Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(referenceLabels.mediums(anyCollection(), any())).thenReturn(List.of());
         lenient().when(featuredTutors.featuredProfileIds()).thenReturn(Set.of());
         lenient().when(searchRepository.countByFacet(any(), any())).thenReturn(Map.of());
@@ -180,6 +191,18 @@ class TutorSearchServiceImplTest {
         for (FacetDimension dimension : FacetDimension.values()) {
             verify(searchRepository).countByFacet(eq(dimension), any());
         }
+    }
+
+    @Test
+    @DisplayName("a new search is counted once; paging through its results is not another search")
+    void onlyTheFirstPageIsCounted() {
+        when(searchRepository.count(any(Specification.class))).thenReturn(0L);
+
+        service.search(TutorSearchCriteria.unfiltered(), Language.EN);
+        verify(events).publishEvent(new TutorSearchPerformedEvent(NOW));
+
+        service.search(criteria(null, null, 1, 20), Language.EN);
+        verify(events, times(1)).publishEvent(any(TutorSearchPerformedEvent.class));
     }
 
     @Test

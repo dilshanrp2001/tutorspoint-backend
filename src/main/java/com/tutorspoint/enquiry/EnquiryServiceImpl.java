@@ -22,6 +22,7 @@ import com.tutorspoint.enquiry.dto.EnquiryListResponse;
 import com.tutorspoint.enquiry.dto.EnquiryMessageRequest;
 import com.tutorspoint.enquiry.dto.EnquiryRequest;
 import com.tutorspoint.enquiry.dto.EnquirySummaryResponse;
+import com.tutorspoint.enquiry.dto.EnquiryUnreadCountResponse;
 import com.tutorspoint.enquiry.event.EnquiryCreatedEvent;
 import com.tutorspoint.enquiry.event.EnquiryRespondedEvent;
 import com.tutorspoint.enquiry.repository.EnquiryRepository;
@@ -159,6 +160,18 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public EnquiryUnreadCountResponse unreadCount() {
+        AuthenticatedUser caller = currentUser.require();
+        long unread = switch (caller.role()) {
+            case PARENT -> enquiries.countUnreadForParent(caller.userId());
+            case TUTOR -> enquiries.countUnreadForTutor(caller.userId());
+            case ADMIN -> 0;
+        };
+        return new EnquiryUnreadCountResponse(unread);
+    }
+
+    @Override
     @Transactional
     public EnquiryDetailResponse thread(Long enquiryId, Language language) {
         AuthenticatedUser caller = currentUser.require();
@@ -226,10 +239,9 @@ public class EnquiryServiceImpl implements EnquiryService {
      * The other participant's details, once the thread has earned them — and a log line every
      * time they are handed over.
      *
-     * <p>The log is the audit trail for now. Phase 5.1 introduces the {@code AuditLog} entity
-     * that NFR-10 ultimately calls for, and the contact reveal is named there as one of the
-     * three actions it must record; this is the same event, written somewhere durable enough
-     * to answer a support question in the meantime.
+     * <p>The reveal itself — the moment the channel opened — is on the durable audit record,
+     * written from {@code EnquiryRespondedEvent} (NFR-10). This line records each later read of
+     * details that were already revealed, which is operational detail rather than a new fact.
      */
     private ContactDetailsDto contactFor(Enquiry enquiry, AuthenticatedUser caller) {
         if (!enquiry.contactRevealed()) {

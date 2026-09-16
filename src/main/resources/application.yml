@@ -112,6 +112,15 @@ tutorspoint:
     # a GET query string would end up in browser history and proxy logs.
     verify-email-url: ${FRONTEND_BASE_URL:http://localhost:5173}/verify-email
     reset-password-url: ${FRONTEND_BASE_URL:http://localhost:5173}/reset-password
+  admin:
+    # The first administrator, created at startup when an email is set (AdminBootstrapRunner).
+    # There is no admin registration: this is the only way an admin account comes to exist.
+    # Idempotent; remove the variables from the environment once the account exists.
+    bootstrap:
+      email: ${ADMIN_BOOTSTRAP_EMAIL:}
+      password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+      full-name: ${ADMIN_BOOTSTRAP_FULL_NAME:TutorsPoint Admin}
+      phone-number: ${ADMIN_BOOTSTRAP_PHONE:}
   enquiry:
     # A domain cap, counted against the enquiries table, not the HTTP rate limiter that
     # arrives in Phase 5.2. Generous for a parent comparing tutors over an evening, low

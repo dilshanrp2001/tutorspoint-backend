@@ -1,5 +1,9 @@
 package com.tutorspoint.enquiry.event;
 
+import com.tutorspoint.common.audit.AuditAction;
+import com.tutorspoint.common.audit.AuditEntry;
+import com.tutorspoint.common.audit.AuditTargetType;
+import com.tutorspoint.common.audit.AuditableEvent;
 import com.tutorspoint.common.domain.Language;
 
 /**
@@ -11,6 +15,10 @@ import com.tutorspoint.common.domain.Language;
  * message is a platform people turn off.
  *
  * <p>Self-contained for the same reason as {@link EnquiryCreatedEvent}; see the note there.
+ *
+ * <p>It is also the contact reveal NFR-10 requires a record of, so it is an
+ * {@link AuditableEvent}: the reveal is audited because it happened, not because the service
+ * remembered to say so. The actor is the tutor, whose reply is what opened the channel.
  *
  * @param enquiryId      the thread, for the deep link the parent follows
  * @param parentId       who is being answered
@@ -27,5 +35,13 @@ public record EnquiryRespondedEvent(
         String parentName,
         Language parentLanguage,
         Long tutorId,
-        String tutorName) {
+        String tutorName) implements AuditableEvent {
+
+    @Override
+    public AuditEntry auditEntry() {
+        return new AuditEntry(tutorId, AuditAction.CONTACT_REVEALED, AuditTargetType.ENQUIRY, enquiryId,
+                AuditEntry.values("contactRevealed", false),
+                AuditEntry.values("contactRevealed", true, "parentId", parentId, "tutorId", tutorId),
+                null);
+    }
 }

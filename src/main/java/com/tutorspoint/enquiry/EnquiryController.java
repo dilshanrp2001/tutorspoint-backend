@@ -7,6 +7,7 @@ import com.tutorspoint.enquiry.dto.EnquiryDetailResponse;
 import com.tutorspoint.enquiry.dto.EnquiryListResponse;
 import com.tutorspoint.enquiry.dto.EnquiryMessageRequest;
 import com.tutorspoint.enquiry.dto.EnquiryRequest;
+import com.tutorspoint.enquiry.dto.EnquiryUnreadCountResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -67,6 +68,15 @@ public class EnquiryController {
             @RequestParam(defaultValue = "20") int size,
             Locale locale) {
         return ApiResponse.ok(enquiryService.myEnquiries(status, page, size, Language.fromLocale(locale)));
+    }
+
+    @GetMapping("/unread-count")
+    @Operation(summary = "How many messages are waiting for me",
+            description = "Unread messages across all of the caller's threads, for the badge in the "
+                    + "header. Uses the same rule as each inbox row's unreadCount, with no page limit. "
+                    + "Zero for an administrator.")
+    public ApiResponse<EnquiryUnreadCountResponse> unreadCount() {
+        return ApiResponse.ok(enquiryService.unreadCount());
     }
 
     @GetMapping("/{enquiryId}")

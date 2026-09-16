@@ -1,5 +1,6 @@
 package com.tutorspoint.tutor;
 
+import com.tutorspoint.auth.domain.AccountStatus;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.repository.UserRepository;
 import com.tutorspoint.auth.security.CurrentUser;
@@ -189,6 +190,9 @@ public class TutorProfileServiceImpl implements TutorProfileService {
     @Transactional(readOnly = true)
     public TutorProfileDto publicProfile(Long tutorId, Language language) {
         TutorProfile profile = profiles.findByTutorIdAndStatus(tutorId, ProfileStatus.PUBLISHED)
+                // A suspended account takes its listing down with it, as search already does.
+                // Same answer as a missing profile: the page says nothing about why.
+                .filter(found -> found.getTutor().getStatus() == AccountStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor profile", tutorId));
         return toDto(profile, language);
     }

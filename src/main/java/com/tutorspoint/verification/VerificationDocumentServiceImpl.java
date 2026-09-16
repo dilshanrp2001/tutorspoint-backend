@@ -16,9 +16,11 @@ import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.verification.domain.DocumentType;
 import com.tutorspoint.verification.domain.VerificationDocument;
 import com.tutorspoint.verification.dto.VerificationDocumentResponse;
+import com.tutorspoint.verification.event.DocumentViewedByAdminEvent;
 import com.tutorspoint.verification.repository.VerificationDocumentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,6 +65,7 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     private final FileStorage fileStorage;
     private final VerificationMapper verificationMapper;
     private final CurrentUser currentUser;
+    private final ApplicationEventPublisher events;
 
     @Override
     @PreAuthorize("hasRole('TUTOR')")
@@ -116,10 +119,13 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     /**
      * Authorises, then reads. The order is the point: nothing is fetched from the store until
      * the caller has been established as the owner or an administrator.
+     *
+     * <p>Not read-only, although it changes no document: an administrator's read writes an audit
+     * row in this transaction, and a read-only one would refuse the insert.
      */
     @Override
     @PreAuthorize("isAuthenticated()")
-    @Transactional(readOnly = true)
+    @Transactional
     public DocumentDownload download(Long documentId) {
         AuthenticatedUser caller = currentUser.require();
         VerificationDocument document = documents.findById(documentId)
@@ -129,9 +135,10 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
 
         if (caller.role() == Role.ADMIN) {
-            // Audited (architecture section 11): a member of staff reading somebody's identity
-            // document is exactly the kind of access that has to leave a trace.
-            log.info("Administrator {} read document {}", caller.userId(), documentId);
+            // Audited (architecture section 11, NFR-10): a member of staff reading somebody's
+            // identity document is exactly the kind of access that has to leave a trace.
+            events.publishEvent(new DocumentViewedByAdminEvent(
+                    caller.userId(), documentId, document.getTutor().getId()));
         }
         return new DocumentDownload(fileStorage.retrieve(document.getStorageKey()), document.getOriginalFilename());
     }

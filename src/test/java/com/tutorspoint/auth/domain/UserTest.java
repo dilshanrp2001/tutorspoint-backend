@@ -196,6 +196,58 @@ class UserTest {
     }
 
     @Nested
+    @DisplayName("reinstate")
+    class Reinstate {
+
+        @Test
+        @DisplayName("a suspended, fully verified account comes back ACTIVE")
+        void returnsAVerifiedAccountToActive() {
+            Tutor tutor = verifiedTutor();
+            tutor.activate();
+            tutor.suspend();
+
+            tutor.reinstate();
+
+            assertThat(tutor.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("an account suspended before it finished verifying goes back to verifying, not to active")
+        void returnsAnUnverifiedAccountToPending() {
+            Tutor tutor = newTutor();
+            tutor.verifyEmail();
+            tutor.suspend();
+
+            tutor.reinstate();
+
+            assertThat(tutor.getStatus()).isEqualTo(AccountStatus.PENDING_VERIFICATION);
+        }
+
+        @Test
+        @DisplayName("only a suspended account can be reinstated - anything else is a stale screen")
+        void isRefusedUnlessSuspended() {
+            Tutor tutor = verifiedTutor();
+            tutor.activate();
+
+            assertThatExceptionOfType(BusinessRuleViolationException.class)
+                    .isThrownBy(tutor::reinstate)
+                    .satisfies(e -> assertThat(e.getCode()).isEqualTo("ACCOUNT_NOT_SUSPENDED"));
+        }
+
+        @Test
+        @DisplayName("a deleted account stays deleted")
+        void isRefusedOnceDeleted() {
+            Tutor tutor = verifiedTutor();
+            tutor.suspend();
+            tutor.delete();
+
+            assertThatExceptionOfType(BusinessRuleViolationException.class)
+                    .isThrownBy(tutor::reinstate)
+                    .satisfies(e -> assertThat(e.getCode()).isEqualTo("ACCOUNT_DELETED"));
+        }
+    }
+
+    @Nested
     @DisplayName("recordLogin()")
     class RecordLogin {
 

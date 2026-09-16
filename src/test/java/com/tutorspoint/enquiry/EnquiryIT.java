@@ -9,6 +9,10 @@ import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.UserRepository;
 import com.tutorspoint.auth.security.JwtService;
+import com.tutorspoint.common.audit.AuditAction;
+import com.tutorspoint.common.audit.AuditLog;
+import com.tutorspoint.common.audit.AuditLogRepository;
+import com.tutorspoint.common.audit.AuditTargetType;
 import com.tutorspoint.common.domain.Language;
 import com.tutorspoint.common.storage.TestFiles;
 import com.tutorspoint.enquiry.repository.EnquiryRepository;
@@ -68,6 +72,9 @@ class EnquiryIT extends AbstractIntegrationTest {
 
     @Autowired
     private EnquiryRepository enquiries;
+
+    @Autowired
+    private AuditLogRepository auditLogs;
 
     /** Everything this test committed, in the order it has to come back out. */
     private final List<Long> createdAccountIds = new ArrayList<>();
@@ -211,6 +218,27 @@ class EnquiryIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("the reveal is on the audit record once - on the tutor's first reply, not the second (NFR-10)")
+    void theRevealIsAudited() throws Exception {
+        long enquiryId = idOf(enquire(parentToken, "Do you teach A/L Chemistry?"));
+        assertThat(auditLogs.findByTargetTypeAndTargetIdOrderByCreatedAtDesc(AuditTargetType.ENQUIRY, enquiryId))
+                .isEmpty();
+
+        reply(tutorToken, enquiryId, "Yes, Saturday mornings are free").andExpect(status().isCreated());
+        reply(tutorToken, enquiryId, "Or Sunday afternoons").andExpect(status().isCreated());
+
+        assertThat(auditLogs.findByTargetTypeAndTargetIdOrderByCreatedAtDesc(AuditTargetType.ENQUIRY, enquiryId))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getAction()).isEqualTo(AuditAction.CONTACT_REVEALED);
+                    assertThat(row.getActorId()).isEqualTo(tutorId);
+                    assertThat(row.getAfterValue()).containsEntry("contactRevealed", true);
+                    assertThat(row.getIpAddress()).isEqualTo("127.0.0.1");
+                })
+                .extracting(AuditLog::getCreatedAt).isNotNull();
+    }
+
+    @Test
     @DisplayName("once the channel is open, a phone number is no longer stripped")
     void scrubbingStopsOnceContactIsRevealed() throws Exception {
         long enquiryId = idOf(enquire(parentToken, "Do you teach A/L Chemistry?"));
@@ -263,6 +291,25 @@ class EnquiryIT extends AbstractIntegrationTest {
                         .header("Authorization", bearer(parentToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    @Test
+    @DisplayName("the unread count covers every thread: what the other side wrote, until it is read")
+    void theUnreadCountFollowsReading() throws Exception {
+        long enquiryId = idOf(enquire(parentToken, "Do you teach A/L Chemistry?"));
+        assertUnread(tutorToken, 1);
+        // Your own message is never unread to you.
+        assertUnread(parentToken, 0);
+        assertUnread(otherParentToken, 0);
+
+        mockMvc.perform(get("/api/enquiries/" + enquiryId).header("Authorization", bearer(tutorToken)))
+                .andExpect(status().isOk());
+        assertUnread(tutorToken, 0);
+
+        reply(tutorToken, enquiryId, "Yes, Saturday mornings are free").andExpect(status().isCreated());
+        reply(tutorToken, enquiryId, "Or Sunday afternoons").andExpect(status().isCreated());
+        assertUnread(parentToken, 2);
+        assertUnread(tutorToken, 0);
     }
 
     @Test
@@ -362,6 +409,12 @@ class EnquiryIT extends AbstractIntegrationTest {
                           "message": %s
                         }
                         """.formatted(tutorId, objectMapper.writeValueAsString(message))));
+    }
+
+    private void assertUnread(String token, long expected) throws Exception {
+        mockMvc.perform(get("/api/enquiries/unread-count").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unreadCount").value(expected));
     }
 
     private ResultActions reply(String token, long enquiryId, String body) throws Exception {
