@@ -112,6 +112,14 @@ tutorspoint:
     # a GET query string would end up in browser history and proxy logs.
     verify-email-url: ${FRONTEND_BASE_URL:http://localhost:5173}/verify-email
     reset-password-url: ${FRONTEND_BASE_URL:http://localhost:5173}/reset-password
+  enquiry:
+    # A domain cap, counted against the enquiries table, not the HTTP rate limiter that
+    # arrives in Phase 5.2. Generous for a parent comparing tutors over an evening, low
+    # enough that no account mails an entire district. A parent may also hold only one open
+    # thread per tutor at a time, which is a rule rather than a number and lives in the code.
+    max-per-hour: 10
+    # The thread page the enquiry notifications link to; the enquiry id is appended.
+    thread-url: ${FRONTEND_BASE_URL:http://localhost:5173}/enquiries
 
 logging:
   level:

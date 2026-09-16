@@ -21,7 +21,17 @@ public enum NotificationType {
     PASSWORD_RESET(ChannelType.EMAIL, "password-reset"),
 
     /** FR-A2: the six-digit phone verification code. */
-    PHONE_OTP(ChannelType.SMS, "otp");
+    PHONE_OTP(ChannelType.SMS, "otp"),
+
+    /**
+     * FR-E3: a parent has asked a tutor a question. Email rather than SMS deliberately —
+     * this one carries a subject line, a name and a link, none of which fit in 160
+     * characters, and unlike an OTP it is not urgent to the second.
+     */
+    ENQUIRY_RECEIVED(ChannelType.EMAIL, "enquiry-received"),
+
+    /** FR-E2: the tutor has answered, and the thread is now open on both sides. */
+    ENQUIRY_REPLIED(ChannelType.EMAIL, "enquiry-reply");
 
     /** The transport this notification is delivered over. */
     private final ChannelType channel;

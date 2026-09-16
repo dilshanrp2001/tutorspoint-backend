@@ -56,6 +56,22 @@ public class ReferenceLabels {
     }
 
     /**
+     * A single format, rendered the same way the dropdown renders it.
+     *
+     * <p>Exists because an enquiry names exactly one (FR-E1), unlike a profile, which lists
+     * the several a tutor teaches in. Without it a caller would wrap one value in a list and
+     * unwrap the result, which is the kind of code that ends up re-deriving the label instead.
+     *
+     * @return null for a null format, so a caller with an optional value needs no branch
+     */
+    public ReferenceItemResponse classFormat(ClassFormat format, Language language) {
+        if (format == null) {
+            return null;
+        }
+        return new ReferenceItemResponse(format.name(), label(CLASS_FORMAT_PREFIX, format, language));
+    }
+
+    /**
      * Enum declaration order is the display order: these lists are short, closed and ordered
      * by meaning, so the enum itself is the only place that ordering needs to be stated.
      */
