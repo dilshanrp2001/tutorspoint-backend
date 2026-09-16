@@ -52,7 +52,12 @@ public class NotifyLkSmsProvider implements SmsProvider {
                     .retrieve()
                     .body(SendResponse.class);
         } catch (RestClientException e) {
-            throw new NotificationDeliveryException("Notify.lk could not be reached", e);
+            // Not chained, and the message not copied. A RestClientException describes the
+            // request it failed on - the full URL, which here carries the API key, the recipient's
+            // number and the message text, OTP included - and the caller logs what it is given.
+            // The type of the underlying failure is enough to tell a timeout from a refusal.
+            throw new NotificationDeliveryException("Notify.lk could not be reached (%s)"
+                    .formatted(e.getMostSpecificCause().getClass().getSimpleName()));
         }
 
         if (response == null || !STATUS_SUCCESS.equalsIgnoreCase(response.status())) {

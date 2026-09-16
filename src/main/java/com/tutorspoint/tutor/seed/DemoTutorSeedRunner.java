@@ -38,8 +38,9 @@ public class DemoTutorSeedRunner implements CommandLineRunner {
             log.debug("Demo tutors already present; not seeding");
             return;
         }
-        log.info("Seeding {} demo tutors (sign in as {} / {})",
-                demoTutors, DemoTutorSeeder.emailFor(1), DemoTutorSeeder.DEMO_PASSWORD);
+        // The password is in DemoTutorSeeder.DEMO_PASSWORD, not here: no password goes to a log,
+        // including one that is a constant in the source.
+        log.info("Seeding {} demo tutors (sign in as {})", demoTutors, DemoTutorSeeder.emailFor(1));
         seeder.seed(demoTutors, RANDOM_SEED);
     }
 }

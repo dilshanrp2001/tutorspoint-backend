@@ -20,6 +20,14 @@ spring:
         # page of search results would otherwise issue a query per card per list it shows.
         default_batch_fetch_size: 50
 
+  datasource:
+    hikari:
+      data-source-properties:
+        # A constraint violation otherwise arrives with PostgreSQL's DETAIL line - "Key
+        # (phone_number)=(+94771234567) already exists" - in the exception message, and from
+        # there in the log. The constraint name is still reported; the row's values are not.
+        logServerErrorDetail: false
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -121,6 +129,44 @@ tutorspoint:
       password: ${ADMIN_BOOTSTRAP_PASSWORD:}
       full-name: ${ADMIN_BOOTSTRAP_FULL_NAME:TutorsPoint Admin}
       phone-number: ${ADMIN_BOOTSTRAP_PHONE:}
+  # Browser origins allowed to call the API cross-origin. The frontend only; wildcards are
+  # refused at startup (CorsProperties). Comma-separated if there is ever more than one.
+  cors:
+    allowed-origins: ${FRONTEND_BASE_URL:http://localhost:5173}
+  # HTTP rate limits (RateLimitFilter): token buckets per client address and per account,
+  # answered with 429 and Retry-After. Every action must be listed, or startup fails.
+  #
+  # Per-address limits are deliberately loose. Sri Lankan mobile networks put many subscribers
+  # behind one carrier-grade NAT address, and a school or an office shares one too: a tight
+  # per-address limit would lock out a whole classroom for one student's typo. The per-account
+  # limits are the tight ones, and the domain caps behind them (OTP sends, enquiries per hour)
+  # stay the final word.
+  rate-limit:
+    enabled: true
+    actions:
+      login:
+        per-client: { requests: 30, per: 5m }
+        per-account: { requests: 10, per: 15m }
+      # Every attempt counts, including one refused for a weak password, so the per-account
+      # number leaves room for a person correcting a form several times.
+      register:
+        per-client: { requests: 20, per: 1h }
+        per-account: { requests: 10, per: 1h }
+      otp-request:
+        per-client: { requests: 20, per: 1h }
+        per-account: { requests: 5, per: 1h }
+      # Both halves of recovery share these: requesting the link, and posting the new password.
+      password-reset:
+        per-client: { requests: 20, per: 1h }
+        per-account: { requests: 5, per: 1h }
+      enquiry-creation:
+        per-client: { requests: 60, per: 1h }
+        per-account: { requests: 20, per: 1h }
+      # The search page re-queries as filters change, so a person is well above one a second
+      # in bursts. The limit is for a scraper walking every page, not for them.
+      search:
+        per-client: { requests: 300, per: 1m }
+        per-account: { requests: 120, per: 1m }
   enquiry:
     # A domain cap, counted against the enquiries table, not the HTTP rate limiter that
     # arrives in Phase 5.2. Generous for a parent comparing tutors over an evening, low
@@ -131,5 +177,9 @@ tutorspoint:
     thread-url: ${FRONTEND_BASE_URL:http://localhost:5173}/enquiries
 
 logging:
+  pattern:
+    # The request id (RequestIdFilter) on every line of the plain-text log, which is what dev
+    # and the tests write. Production logs JSON instead, where it is a field of its own.
+    correlation: "[%X{requestId:-}] "
   level:
     com.tutorspoint: INFO

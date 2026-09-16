@@ -15,9 +15,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -55,6 +57,7 @@ class TutorProfileMediaIT extends AbstractIntegrationTest {
 
     private String tutorToken;
     private String parentToken;
+    private List<Long> accountIds;
 
     @BeforeEach
     void createAccounts() {
@@ -62,6 +65,7 @@ class TutorProfileMediaIT extends AbstractIntegrationTest {
         Parent parent = activated(new Parent("media.parent@example.lk", hash(), "Niluka", "+94774000002", Language.EN));
         tutorToken = jwtService.issueAccessToken(tutor);
         parentToken = jwtService.issueAccessToken(parent);
+        accountIds = List.of(tutor.getId(), parent.getId());
     }
 
     @Test
@@ -121,8 +125,14 @@ class TutorProfileMediaIT extends AbstractIntegrationTest {
         String second = uploadPhoto(TestFiles.png());
 
         assertThat(second).isNotEqualTo(first);
-        mockMvc.perform(get(second)).andExpect(status().isOk());
-        mockMvc.perform(get(first)).andExpect(status().isNotFound());
+        // Until the change commits, the profile could still roll back to the first photo, so the
+        // first file must still be there.
+        mockMvc.perform(get(first)).andExpect(status().isOk());
+
+        commitThenRemoveAccountsAfter(() -> {
+            mockMvc.perform(get(second)).andExpect(status().isOk());
+            mockMvc.perform(get(first)).andExpect(status().isNotFound());
+        });
     }
 
     @Test
@@ -135,7 +145,7 @@ class TutorProfileMediaIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.photoUrl").doesNotExist())
                 .andExpect(jsonPath("$.data.missingFields", org.hamcrest.Matchers.hasItem("PHOTO")));
 
-        mockMvc.perform(get(photoUrl)).andExpect(status().isNotFound());
+        commitThenRemoveAccountsAfter(() -> mockMvc.perform(get(photoUrl)).andExpect(status().isNotFound()));
     }
 
     @Test
@@ -239,6 +249,32 @@ class TutorProfileMediaIT extends AbstractIntegrationTest {
                 .getResponse()
                 .getContentAsString(StandardCharsets.UTF_8);
         return objectMapper.readTree(body).at("/data/photoUrl").asText();
+    }
+
+    /**
+     * Commits the test's transaction, runs the check, then deletes the accounts that commit made
+     * permanent (their profiles cascade with them).
+     *
+     * <p>For the tests about a replaced or removed file. That file is deleted only once the change
+     * commits - so a rollback can never leave a profile pointing at nothing - and the transaction
+     * every other test here rolls back would never let that happen.
+     */
+    private void commitThenRemoveAccountsAfter(Check check) throws Exception {
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        try {
+            check.run();
+        } finally {
+            TestTransaction.start();
+            users.deleteAll(users.findAllById(accountIds));
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+        }
+    }
+
+    @FunctionalInterface
+    private interface Check {
+        void run() throws Exception;
     }
 
     private static String asText(byte[] bytes) {

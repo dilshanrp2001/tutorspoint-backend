@@ -2,7 +2,10 @@ package com.tutorspoint.common.exception;
 
 import com.tutorspoint.common.api.ApiResponse;
 import com.tutorspoint.common.api.ApiResponse.ApiError;
+import com.tutorspoint.common.logging.RequestIdFilter;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -19,6 +22,7 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -80,7 +84,9 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException ex) {
-        log.debug("Unreadable request body: {}", ex.getMessage());
+        // The type only. Jackson's message quotes the value it could not read, and the value
+        // could be a password or a token.
+        log.debug("Unreadable request body: {}", ex.getMostSpecificCause().getClass().getSimpleName());
         return respond(HttpStatus.BAD_REQUEST, ApiError.of("MALFORMED_REQUEST",
                 "The request body could not be read. Check the JSON and the allowed values."));
     }
@@ -142,12 +148,32 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Catch-all. The stack trace is logged server-side against a correlation id and
-     * never reaches the client; the response carries only the id.
+     * A write lost to a database constraint - most often two identical requests racing past the
+     * service's own check (a second open enquiry with the same tutor, the same phone number
+     * registered twice at once). The constraint is what held, so the data is consistent and the
+     * transaction has rolled back; the caller is told there was a conflict, not that the server
+     * broke.
+     *
+     * <p>Neither the exception message nor its cause is logged or returned: a constraint
+     * violation describes the offending row, and that row can hold an email address or a
+     * phone number.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(DataIntegrityViolationException ex) {
+        log.warn("Write rejected by a database constraint");
+        return respond(HttpStatus.CONFLICT, ApiError.of("CONFLICT",
+                "The request conflicts with a change made at the same time. Reload and try again."));
+    }
+
+    /**
+     * Catch-all. The stack trace is logged server-side and never reaches the client; the
+     * response carries only the request's correlation id, which is on every log line the
+     * request wrote, so a support ticket that quotes it leads straight to all of them.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception ex) {
-        String errorId = UUID.randomUUID().toString();
+        String errorId = Optional.ofNullable(MDC.get(RequestIdFilter.MDC_KEY))
+                .orElseGet(() -> UUID.randomUUID().toString());
         log.error("Unhandled exception [errorId={}]", errorId, ex);
         return respond(HttpStatus.INTERNAL_SERVER_ERROR, ApiError.of("INTERNAL_ERROR",
                 "An unexpected error occurred. Quote reference " + errorId + " when reporting this."));

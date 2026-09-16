@@ -22,6 +22,7 @@
 		<lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
 		<springdoc.version>2.9.1</springdoc.version>
 		<jjwt.version>0.12.6</jjwt.version>
+		<bucket4j.version>8.19.0</bucket4j.version>
 	</properties>
 
 	<dependencies>
@@ -83,6 +84,18 @@
 			<artifactId>jjwt-jackson</artifactId>
 			<version>${jjwt.version}</version>
 			<scope>runtime</scope>
+		</dependency>
+
+		<!-- Rate limiting. Bucket4j is confined to the limiter adapter; Caffeine bounds how many
+		     client keys (addresses, accounts) are held in memory at once. -->
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-core</artifactId>
+			<version>${bucket4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
 		</dependency>
 
 		<!-- Notifications -->

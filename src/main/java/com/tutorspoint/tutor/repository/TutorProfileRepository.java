@@ -2,6 +2,7 @@ package com.tutorspoint.tutor.repository;
 
 import com.tutorspoint.tutor.domain.ProfileStatus;
 import com.tutorspoint.tutor.domain.TutorProfile;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Collection;
@@ -26,7 +27,13 @@ public interface TutorProfileRepository extends JpaRepository<TutorProfile, Long
      * <p>The status is part of the query rather than a check on the result, which is what
      * makes a draft indistinguishable from a tutor who does not exist: there is no branch
      * where a found-but-unpublished profile could be returned by mistake.
+     *
+     * <p>The account and the home base come in the same statement: both are single rows every
+     * profile page shows. The collections load one statement each, their translations batched
+     * (see {@code default_batch_fetch_size}), so a tutor listing twenty subjects costs what a tutor
+     * listing one does.
      */
+    @EntityGraph(attributePaths = {"tutor", "homeBaseArea"})
     Optional<TutorProfile> findByTutorIdAndStatus(Long tutorId, ProfileStatus status);
 
     /**

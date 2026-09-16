@@ -1,6 +1,9 @@
 package com.tutorspoint.common.config;
 
+import com.tutorspoint.common.logging.MdcTaskDecorator;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
@@ -11,4 +14,13 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @Configuration
 @EnableAsync
 public class AsyncConfig {
+
+    /**
+     * Picked up by Spring Boot's auto-configured executor, so the request id travels with every
+     * task handed to the pool.
+     */
+    @Bean
+    public TaskDecorator mdcTaskDecorator() {
+        return new MdcTaskDecorator();
+    }
 }

@@ -45,6 +45,10 @@ tutorspoint:
     jwt:
       secret: ${JWT_SECRET}
 
+  # No fallback, as for the links above: a production API that allowed localhost would be wrong.
+  cors:
+    allowed-origins: ${FRONTEND_BASE_URL}
+
   storage:
     local:
       # A mounted volume, with no default on purpose. A path inside the container would
@@ -59,6 +63,11 @@ springdoc:
     enabled: false
 
 logging:
+  # One JSON object per line (Elastic Common Schema), so the log can be searched by field. The
+  # logging context goes in as fields, the request id among them.
+  structured:
+    format:
+      console: ecs
   level:
     root: WARN
     com.tutorspoint: INFO

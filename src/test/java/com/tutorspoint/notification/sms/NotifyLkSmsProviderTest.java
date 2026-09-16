@@ -76,6 +76,28 @@ class NotifyLkSmsProviderTest {
     }
 
     @Test
+    void aTransportFailureCarriesNoCredentialNumberOrMessageText() {
+        // A ResourceAccessException names the URL it failed on, and this URL holds the API key,
+        // the recipient and the OTP. The caller logs the exception it gets, stack and causes.
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith("https://app.notify.lk/api/v1/send")))
+                .andRespond(request -> {
+                    throw new java.net.SocketTimeoutException("Read timed out");
+                });
+
+        assertThatExceptionOfType(NotificationDeliveryException.class)
+                .isThrownBy(() -> provider.send("+94771234567", "Your code is 123456"))
+                .satisfies(e -> {
+                    StringBuilder everything = new StringBuilder();
+                    for (Throwable t = e; t != null; t = t.getCause()) {
+                        everything.append(t).append('\n');
+                    }
+                    org.assertj.core.api.Assertions.assertThat(everything.toString())
+                            .contains("SocketTimeoutException")
+                            .doesNotContain("key-1", "94771234567", "123456");
+                });
+    }
+
+    @Test
     void aNumberWithNoDigitsNeverReachesTheGateway() {
         assertThatExceptionOfType(NotificationDeliveryException.class)
                 .isThrownBy(() -> provider.send("+", "Your code is 123456"));

@@ -54,4 +54,5 @@ tutorspoint:
 logging:
   level:
     com.tutorspoint: DEBUG
-    org.hibernate.orm.jdbc.bind: TRACE
+    # Not org.hibernate.orm.jdbc.bind at TRACE: it prints every bound value, which means password
+    # hashes, token digests and full phone numbers. show-sql above prints the statements.

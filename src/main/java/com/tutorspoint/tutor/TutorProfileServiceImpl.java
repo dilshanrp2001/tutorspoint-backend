@@ -13,6 +13,7 @@ import com.tutorspoint.common.storage.FileType;
 import com.tutorspoint.common.storage.ImageSanitiser;
 import com.tutorspoint.common.storage.MediaUrls;
 import com.tutorspoint.common.storage.StorageArea;
+import com.tutorspoint.common.storage.StoredFiles;
 import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.reference.ReferenceLabels;
 import com.tutorspoint.reference.domain.Area;
@@ -265,26 +266,27 @@ public class TutorProfileServiceImpl implements TutorProfileService {
     /**
      * Stores new media, points the profile at it, and removes what it replaced.
      *
-     * <p>The new file is written before the old one is deleted, so a failure anywhere leaves the
-     * profile showing something rather than nothing. The order also means the worst outcome is
-     * an unreferenced file in the store, which is invisible and sweepable - the opposite order
-     * risks a profile pointing at a photograph that no longer exists.
+     * <p>Both files follow the transaction (NFR-7): the new one is removed if the profile change
+     * rolls back, and the old one only once it has committed. Whatever fails, the profile ends
+     * up pointing at a file that exists - the new one or the old one, never neither.
      */
     private void replaceMedia(StorageArea area, FileContent content, String previousUrl,
                               Consumer<String> attach) {
         String storageKey = fileStorage.store(area, content);
+        StoredFiles.deleteOnRollback(fileStorage, storageKey);
         attach.accept(MediaUrls.urlFor(storageKey));
         deleteMedia(previousUrl);
     }
 
     /**
-     * Removes a file the profile used to point at, if it was one of ours.
+     * Removes a file the profile used to point at, if it was one of ours, once the change that
+     * stopped pointing at it has committed.
      *
      * <p>A URL that is not a media URL is left alone rather than treated as an error: it is not
      * a key, so there is nothing to delete, and guessing would mean deleting something else.
      */
     private void deleteMedia(String previousUrl) {
-        MediaUrls.keyFrom(previousUrl).ifPresent(fileStorage::delete);
+        MediaUrls.keyFrom(previousUrl).ifPresent(key -> StoredFiles.deleteAfterCommit(fileStorage, key));
     }
 
     private TutorProfileDto toDto(TutorProfile profile, Language language) {

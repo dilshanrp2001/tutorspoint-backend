@@ -12,6 +12,7 @@ import com.tutorspoint.common.storage.FileContent;
 import com.tutorspoint.common.storage.FileStorage;
 import com.tutorspoint.common.storage.FileType;
 import com.tutorspoint.common.storage.StorageArea;
+import com.tutorspoint.common.storage.StoredFiles;
 import com.tutorspoint.common.storage.UploadedFile;
 import com.tutorspoint.verification.domain.DocumentType;
 import com.tutorspoint.verification.domain.VerificationDocument;
@@ -82,6 +83,9 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
 
         FileContent content = file.asContent();
         String storageKey = fileStorage.store(StorageArea.TUTOR_DOCUMENTS, content);
+        // The file and the row are one upload (NFR-7). If the row cannot be written, or the
+        // transaction fails to commit, the file goes too.
+        StoredFiles.deleteOnRollback(fileStorage, storageKey);
         VerificationDocument document =
                 documents.save(new VerificationDocument(tutor, documentType, storageKey, file, content));
 
