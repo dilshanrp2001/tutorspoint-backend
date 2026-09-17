@@ -1,6 +1,7 @@
 package com.tutorspoint.auth;
 
 import com.tutorspoint.auth.config.AuthProperties;
+import com.tutorspoint.auth.config.OtpDelivery;
 import com.tutorspoint.auth.domain.AccountStatus;
 import com.tutorspoint.auth.domain.EmailVerificationToken;
 import com.tutorspoint.auth.domain.Parent;
@@ -72,14 +73,6 @@ class AuthServiceImplTest {
 
     private static final Instant NOW = Instant.parse("2026-09-12T09:00:00Z");
 
-    private static final AuthProperties PROPERTIES = new AuthProperties(
-            Duration.ofHours(24),
-            Duration.ofMinutes(30),
-            Duration.ofMinutes(5),
-            3,
-            "https://tutorspoint.test/verify-email",
-            "https://tutorspoint.test/reset-password");
-
     private static final String EMAIL = "nimali@example.lk";
     private static final String PHONE = "+94771234567";
     private static final String PASSWORD = "Colombo2026";
@@ -121,9 +114,25 @@ class AuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new AuthServiceImpl(users, emailTokens, phoneOtps, passwordResetTokens,
+        service = serviceDelivering(OtpDelivery.SMS);
+    }
+
+    private static AuthProperties propertiesDelivering(OtpDelivery otpDelivery) {
+        return new AuthProperties(
+                Duration.ofHours(24),
+                Duration.ofMinutes(30),
+                Duration.ofMinutes(5),
+                otpDelivery,
+                3,
+                "https://tutorspoint.test/verify-email",
+                "https://tutorspoint.test/reset-password");
+    }
+
+    /** The same service, differing only in which transport carries the OTP. */
+    private AuthServiceImpl serviceDelivering(OtpDelivery otpDelivery) {
+        return new AuthServiceImpl(users, emailTokens, phoneOtps, passwordResetTokens,
                 refreshTokenService, jwtService, notifications, passwordEncoder, accountMapper,
-                PROPERTIES, Clock.fixed(NOW, ZoneOffset.UTC));
+                propertiesDelivering(otpDelivery), Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Nested
@@ -418,6 +427,39 @@ class AuthServiceImplTest {
 
             then(phoneOtps).should().save(any(PhoneOtp.class));
             then(notifications).should().send(any(Notification.class));
+        }
+
+        @Test
+        void sendingTextsThePhoneWhenDeliveryIsSms() {
+            Tutor user = tutor(7L);
+            given(passwordEncoder.encode(anyString())).willAnswer(call -> hashOf(call.getArgument(0)));
+            given(users.findByEmail(EMAIL)).willReturn(Optional.of(user));
+
+            service.sendOtp(new SendOtpRequest(EMAIL));
+
+            then(notifications).should().send(sent.capture());
+            assertThat(sent.getValue().getType()).isEqualTo(NotificationType.PHONE_OTP);
+            assertThat(sent.getValue().getRecipient()).isEqualTo(PHONE);
+        }
+
+        /**
+         * The interim setting while there is no SMS gateway account: same code, same hash,
+         * same expiry, carried to the registered address instead of the handset.
+         */
+        @Test
+        void sendingEmailsTheAddressWhenDeliveryIsEmail() {
+            Tutor user = tutor(7L);
+            given(passwordEncoder.encode(anyString())).willAnswer(call -> hashOf(call.getArgument(0)));
+            given(users.findByEmail(EMAIL)).willReturn(Optional.of(user));
+            AuthServiceImpl overEmail = serviceDelivering(OtpDelivery.EMAIL);
+
+            overEmail.sendOtp(new SendOtpRequest(EMAIL));
+
+            then(phoneOtps).should().save(any(PhoneOtp.class));
+            then(notifications).should().send(sent.capture());
+            assertThat(sent.getValue().getType()).isEqualTo(NotificationType.PHONE_OTP_EMAIL);
+            assertThat(sent.getValue().getRecipient()).isEqualTo(EMAIL);
+            assertThat(sent.getValue().getVariables()).containsKey("code");
         }
 
         @Test

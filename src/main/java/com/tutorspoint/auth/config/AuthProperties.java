@@ -30,6 +30,13 @@ public record AuthProperties(
         @NotNull Duration otpTtl,
 
         /**
+         * Which transport carries the code. {@link OtpDelivery#SMS} is the requirement;
+         * {@link OtpDelivery#EMAIL} is the free interim setting, and is the default until
+         * a gateway account exists.
+         */
+        @NotNull OtpDelivery otpDelivery,
+
+        /**
          * Sends allowed per account per hour. Every SMS costs money, so this caps both
          * abuse and an impatient user's resend button.
          */

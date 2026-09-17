@@ -1,6 +1,7 @@
 package com.tutorspoint.auth;
 
 import com.tutorspoint.auth.config.AuthProperties;
+import com.tutorspoint.auth.config.OtpDelivery;
 import com.tutorspoint.auth.domain.AccountStatus;
 import com.tutorspoint.auth.domain.EmailVerificationToken;
 import com.tutorspoint.auth.domain.Parent;
@@ -302,8 +303,14 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
-     * Texts a fresh code (FR-A2), refusing past the hourly cap. Every SMS costs money, so
-     * the cap protects the bill as much as it protects the account.
+     * Sends a fresh code (FR-A2), refusing past the hourly cap. The cap outlives the
+     * transport: an SMS costs money per message, and an emailed code is still a live
+     * secret that nobody should be able to spray at an account.
+     *
+     * <p>Which transport carries it is configuration, not a decision made here — see
+     * {@link OtpDelivery}. Everything else about the code is identical either way: the
+     * same six digits, the same hash, the same expiry, checked by the same
+     * {@link #verifyOtp}.
      */
     private void sendOtpTo(User user) {
         Instant now = clock.instant();
@@ -317,12 +324,16 @@ public class AuthServiceImpl implements AuthService {
         Duration ttl = authProperties.otpTtl();
         phoneOtps.save(new PhoneOtp(user.getId(), passwordEncoder.encode(code), now.plus(ttl)));
 
+        boolean overEmail = authProperties.otpDelivery() == OtpDelivery.EMAIL;
         notifications.send(Notification.builder()
-                .type(NotificationType.PHONE_OTP)
-                .recipient(user.getPhoneNumber())
+                .type(overEmail ? NotificationType.PHONE_OTP_EMAIL : NotificationType.PHONE_OTP)
+                .recipient(overEmail ? user.getEmail() : user.getPhoneNumber())
                 .language(user.getPreferredLanguage())
                 .variable("code", code)
                 .variable("expiryMinutes", ttl.toMinutes())
+                // Only the email template greets the reader; an unused variable costs a
+                // template nothing, and keeps this one send call.
+                .variable("fullName", user.getFullName())
                 .build());
     }
 

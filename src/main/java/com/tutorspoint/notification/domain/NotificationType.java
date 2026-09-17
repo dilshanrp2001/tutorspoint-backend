@@ -24,6 +24,14 @@ public enum NotificationType {
     PHONE_OTP(ChannelType.SMS, "otp"),
 
     /**
+     * FR-A2, the same code over email instead. A separate type rather than a channel
+     * switch on {@link #PHONE_OTP}, because the two carry different templates and
+     * different recipients, and a type must keep meaning exactly one message on one
+     * transport. Chosen by {@code tutorspoint.auth.otp-delivery}.
+     */
+    PHONE_OTP_EMAIL(ChannelType.EMAIL, "otp-email"),
+
+    /**
      * FR-E3: a parent has asked a tutor a question. Email rather than SMS deliberately —
      * this one carries a subject line, a name and a link, none of which fit in 160
      * characters, and unlike an OTP it is not urgent to the second.

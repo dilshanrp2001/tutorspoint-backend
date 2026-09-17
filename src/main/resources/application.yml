@@ -114,7 +114,13 @@ tutorspoint:
     email-verification-ttl: 24h
     password-reset-ttl: 30m
     otp-ttl: 5m
-    # Every SMS costs money (see the cost note in the development plan).
+    # EMAIL until there is an SMS gateway account: the code goes to the registered address
+    # over the mail transport we already pay for. This verifies the address, not the
+    # handset, so the phone number is effectively unproven while it is set. Switch to SMS
+    # once the gateway credentials are in the environment — nothing else has to change.
+    otp-delivery: ${OTP_DELIVERY:EMAIL}
+    # Kept whichever transport is in use: an SMS costs money per message, and an emailed
+    # code is still a live secret (see the cost note in the development plan).
     max-otp-sends-per-hour: 3
     # The emailed links point at frontend pages, which post the token to the API. A token in
     # a GET query string would end up in browser history and proxy logs.

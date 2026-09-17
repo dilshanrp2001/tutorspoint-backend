@@ -31,6 +31,12 @@ tutorspoint:
   rate-limit:
     enabled: false
 
+  auth:
+    # Pinned to SMS, whatever the deployed default is. The integration tests capture the
+    # OTP off the SMS provider, and that path is the one FR-A2 actually asks for; the
+    # email variant is covered in AuthServiceImplTest.
+    otp-delivery: SMS
+
   security:
     jwt:
       # A fixed throwaway key, base64 of 32 bytes. Tests must sign and verify real tokens;
