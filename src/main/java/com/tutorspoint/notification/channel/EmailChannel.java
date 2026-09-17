@@ -10,6 +10,8 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -27,6 +29,11 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class EmailChannel implements NotificationChannel {
 
+    /** The Content-ID every HTML template points its header image at. */
+    static final String LOGO_CONTENT_ID = "tutorspoint-logo";
+
+    private static final Resource LOGO = new ClassPathResource("mail/logo.png");
+
     private final JavaMailSender mailSender;
     private final NotificationTemplateRenderer renderer;
     private final NotificationEmailProperties properties;
@@ -40,12 +47,16 @@ public class EmailChannel implements NotificationChannel {
     public void send(Notification notification) {
         MimeMessage message = mailSender.createMimeMessage();
         try {
-            MimeMessageHelper helper =
-                    new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());
+            // Multipart so the logo travels inside the message: Gmail and Outlook block
+            // remote images by default and do not render SVG at all.
+            MimeMessageHelper helper = new MimeMessageHelper(
+                    message, MimeMessageHelper.MULTIPART_MODE_RELATED, StandardCharsets.UTF_8.name());
             helper.setFrom(properties.from(), properties.fromName());
             helper.setTo(notification.getRecipient());
             helper.setSubject(renderer.subject(notification));
             helper.setText(renderer.render(notification, TemplateFormat.HTML), true);
+            // Must follow setText: the templates reference it as cid:tutorspoint-logo.
+            helper.addInline(LOGO_CONTENT_ID, LOGO, "image/png");
         } catch (MessagingException | UnsupportedEncodingException e) {
             throw new NotificationDeliveryException(
                     "Could not compose %s email for %s"

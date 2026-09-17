@@ -8,9 +8,12 @@ import com.tutorspoint.notification.domain.Notification;
 import com.tutorspoint.notification.domain.NotificationType;
 import com.tutorspoint.notification.template.NotificationTemplateRenderer;
 import com.tutorspoint.notification.template.TemplateFormat;
+import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,10 +81,35 @@ class EmailChannelTest {
                     assertThat(from.getAddress()).isEqualTo("no-reply@tutorspoint.xyz");
                     assertThat(from.getPersonal()).isEqualTo("TutorsPoint");
                 });
-        assertThat(message.getContent()).isEqualTo("<p>Hello Nimal</p>");
+        MimeMultipart related = (MimeMultipart) message.getContent();
+        assertThat(related.getCount()).isEqualTo(2);
+
+        MimeBodyPart html = (MimeBodyPart) related.getBodyPart(0);
+        assertThat(html.getContent()).isEqualTo("<p>Hello Nimal</p>");
         // Read off the data handler: headers are only written on saveChanges(), which
         // JavaMailSender does at send time and the mock never reaches.
-        assertThat(message.getDataHandler().getContentType()).contains("text/html").contains("UTF-8");
+        assertThat(html.getDataHandler().getContentType()).contains("text/html").contains("UTF-8");
+    }
+
+    @Test
+    void itAttachesTheLogoInlineUnderTheContentIdTheTemplatesReference() throws Exception {
+        given(mailSender.createMimeMessage()).willReturn(new MimeMessage((Session) null));
+        given(renderer.subject(NOTIFICATION)).willReturn("Verify");
+        given(renderer.render(NOTIFICATION, TemplateFormat.HTML)).willReturn("<img src=\"cid:tutorspoint-logo\">");
+
+        channel.send(NOTIFICATION);
+
+        ArgumentCaptor<MimeMessage> sent = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(sent.capture());
+        MimeBodyPart logo = (MimeBodyPart) ((MimeMultipart) sent.getValue().getContent()).getBodyPart(1);
+
+        assertThat(logo.getContentID()).isEqualTo("<" + EmailChannel.LOGO_CONTENT_ID + ">");
+        assertThat(logo.getDisposition()).isEqualTo(Part.INLINE);
+        assertThat(logo.getDataHandler().getContentType()).isEqualTo("image/png");
+        // Fails if mail/logo.png is missing from the classpath.
+        try (var bytes = logo.getDataHandler().getInputStream()) {
+            assertThat(bytes.readAllBytes()).isNotEmpty();
+        }
     }
 
     @Test
