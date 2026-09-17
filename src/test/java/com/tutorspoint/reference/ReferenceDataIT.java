@@ -151,6 +151,21 @@ class ReferenceDataIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("tutors teaching computing outside the exam system can say what they teach, grouped with the other skills")
+    void subjectsCoverComputingBeyondTheSchoolSyllabus() throws Exception {
+        List<String> codes = items("/api/reference/subjects", "en").stream()
+                .map(ReferenceItemResponse::code)
+                .toList();
+
+        assertThat(codes).contains("COMPUTER_PROGRAMMING", "DATABASES", "WEB_DEVELOPMENT",
+                "MOBILE_APP_DEVELOPMENT", "DATA_STRUCTURES_AND_ALGORITHMS", "SOFTWARE_ENGINEERING",
+                "COMPUTER_NETWORKS", "DATA_SCIENCE_AND_MACHINE_LEARNING", "CYBER_SECURITY");
+
+        assertThat(codes.indexOf("CIMA")).isLessThan(codes.indexOf("COMPUTER_PROGRAMMING"));
+        assertThat(codes.indexOf("COMPUTER_PROGRAMMING")).isLessThan(codes.indexOf("DATABASES"));
+    }
+
+    @Test
     void syllabusesSeparateTheNationalMediumsFromTheInternationalBoards() throws Exception {
         assertThat(items("/api/reference/syllabuses", "en").stream().map(ReferenceItemResponse::code))
                 .containsExactly("NATIONAL_SINHALA", "NATIONAL_TAMIL", "NATIONAL_ENGLISH",
