@@ -30,6 +30,17 @@ public record AuthProperties(
         @NotNull Duration otpTtl,
 
         /**
+         * Whether phone verification runs at all (FR-A2). False until an SMS gateway
+         * account exists: registration then sends only the email verification link, and
+         * the two OTP endpoints refuse rather than mail a second code to the same inbox.
+         *
+         * <p>Turning this on is the whole switch — set it with {@code otpDelivery=SMS},
+         * and restore {@code && phoneVerified} in {@code User#isFullyVerified()} so an
+         * account again needs both channels.
+         */
+        boolean phoneVerificationEnabled,
+
+        /**
          * Which transport carries the code. {@link OtpDelivery#SMS} is the requirement;
          * {@link OtpDelivery#EMAIL} is the free interim setting, and is the default until
          * a gateway account exists.

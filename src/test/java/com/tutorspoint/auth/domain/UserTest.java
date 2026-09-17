@@ -80,11 +80,14 @@ class UserTest {
         }
 
         @Test
-        void isRefusedWhileOnlyTheEmailIsVerified() {
+        @DisplayName("the email address alone is enough while phone verification is off")
+        void succeedsOnceTheEmailIsVerified() {
             Tutor tutor = newTutor();
             tutor.verifyEmail();
 
-            assertVerificationIncomplete(tutor);
+            tutor.activate();
+
+            assertThat(tutor.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         }
 
         @Test
@@ -215,7 +218,7 @@ class UserTest {
         @DisplayName("an account suspended before it finished verifying goes back to verifying, not to active")
         void returnsAnUnverifiedAccountToPending() {
             Tutor tutor = newTutor();
-            tutor.verifyEmail();
+            tutor.verifyPhone();
             tutor.suspend();
 
             tutor.reinstate();

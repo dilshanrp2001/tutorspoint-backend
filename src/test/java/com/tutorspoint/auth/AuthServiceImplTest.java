@@ -118,10 +118,16 @@ class AuthServiceImplTest {
     }
 
     private static AuthProperties propertiesDelivering(OtpDelivery otpDelivery) {
+        return propertiesWithPhoneVerification(otpDelivery, true);
+    }
+
+    private static AuthProperties propertiesWithPhoneVerification(
+            OtpDelivery otpDelivery, boolean phoneVerificationEnabled) {
         return new AuthProperties(
                 Duration.ofHours(24),
                 Duration.ofMinutes(30),
                 Duration.ofMinutes(5),
+                phoneVerificationEnabled,
                 otpDelivery,
                 3,
                 "https://tutorspoint.test/verify-email",
@@ -130,9 +136,13 @@ class AuthServiceImplTest {
 
     /** The same service, differing only in which transport carries the OTP. */
     private AuthServiceImpl serviceDelivering(OtpDelivery otpDelivery) {
+        return serviceWith(propertiesDelivering(otpDelivery));
+    }
+
+    private AuthServiceImpl serviceWith(AuthProperties properties) {
         return new AuthServiceImpl(users, emailTokens, phoneOtps, passwordResetTokens,
                 refreshTokenService, jwtService, notifications, passwordEncoder, accountMapper,
-                propertiesDelivering(otpDelivery), Clock.fixed(NOW, ZoneOffset.UTC));
+                properties, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Nested
@@ -140,7 +150,7 @@ class AuthServiceImplTest {
     class Registration {
 
         @Test
-        void createsAPendingTutorAndSendsBothSecrets() {
+        void createsAPendingTutorAndSendsOnlyTheVerificationLink() {
             givenNothingIsTaken();
             givenPasswordsAreHashed();
             given(users.saveAndFlush(any(User.class))).willAnswer(call -> withId(call.getArgument(0, User.class), 7L));
@@ -155,11 +165,13 @@ class AuthServiceImplTest {
             assertThat(saved.getValue().getPasswordHash()).isEqualTo(hashOf(PASSWORD));
 
             then(emailTokens).should().save(any(EmailVerificationToken.class));
-            then(phoneOtps).should().save(any(PhoneOtp.class));
-            then(notifications).should(times(2)).send(sent.capture());
+            // Signup sends one message. No OTP is minted, so nothing reaches the same
+            // inbox twice while phone verification is off.
+            then(phoneOtps).shouldHaveNoInteractions();
+            then(notifications).should().send(sent.capture());
             assertThat(sent.getAllValues())
                     .extracting(Notification::getType)
-                    .containsExactly(NotificationType.EMAIL_VERIFICATION, NotificationType.PHONE_OTP);
+                    .containsExactly(NotificationType.EMAIL_VERIFICATION);
         }
 
         @Test
@@ -191,26 +203,21 @@ class AuthServiceImplTest {
         }
 
         @Test
-        void sendsTheCodeToTheNumberOnTheAccountAndTheLinkToTheAddress() {
+        void sendsTheLinkToTheAddressAndNothingElse() {
             givenNothingIsTaken();
             givenPasswordsAreHashed();
             given(users.saveAndFlush(any(User.class))).willAnswer(call -> withId(call.getArgument(0, User.class), 7L));
 
             service.register(registerAs(RegistrableRole.TUTOR));
 
-            then(notifications).should(times(2)).send(sent.capture());
-            Notification email = sent.getAllValues().getFirst();
-            Notification sms = sent.getAllValues().getLast();
+            then(notifications).should().send(sent.capture());
+            Notification email = sent.getValue();
 
             assertThat(email.getRecipient()).isEqualTo(EMAIL);
             assertThat(email.getLanguage()).isEqualTo(Language.SI);
             assertThat((String) email.getVariables().get("verificationUrl"))
                     .startsWith("https://tutorspoint.test/verify-email?token=");
             assertThat(email.getVariables()).containsEntry("expiryHours", 24L);
-
-            assertThat(sms.getRecipient()).isEqualTo(PHONE);
-            assertThat((String) sms.getVariables().get("code")).matches("\\d{6}");
-            assertThat(sms.getVariables()).containsEntry("expiryMinutes", 5L);
         }
 
         @Test
@@ -257,7 +264,7 @@ class AuthServiceImplTest {
     class EmailVerification {
 
         @Test
-        void confirmsTheAddressButWaitsForThePhoneBeforeActivating() {
+        void confirmsTheAddressAndActivatesTheAccount() {
             Tutor user = tutor(7L);
             givenLinkToken(emailToken(user.getId(), NOW.plus(Duration.ofHours(24))));
             given(users.findById(7L)).willReturn(Optional.of(user));
@@ -265,7 +272,10 @@ class AuthServiceImplTest {
             service.verifyEmail(new VerifyEmailRequest(RAW_LINK_TOKEN));
 
             assertThat(user.isEmailVerified()).isTrue();
-            assertThat(user.getStatus()).isEqualTo(AccountStatus.PENDING_VERIFICATION);
+            // The link is the only challenge while phone verification is off, so opening
+            // it is enough to finish signup on its own.
+            assertThat(user.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+            assertThat(user.isPhoneVerified()).isFalse();
         }
 
         @Test
@@ -482,6 +492,42 @@ class AuthServiceImplTest {
 
             then(phoneOtps).should(never()).save(any(PhoneOtp.class));
             then(notifications).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("phone verification switched off")
+    class PhoneVerificationDisabled {
+
+        private AuthServiceImpl disabled;
+
+        @BeforeEach
+        void setUp() {
+            disabled = serviceWith(propertiesWithPhoneVerification(OtpDelivery.EMAIL, false));
+        }
+
+        @Test
+        @DisplayName("a code request is refused rather than mailed to the same inbox")
+        void refusesToSendACode() {
+            assertThatExceptionOfType(BusinessRuleViolationException.class)
+                    .isThrownBy(() -> disabled.sendOtp(new SendOtpRequest(EMAIL)))
+                    .satisfies(ex -> assertThat(ex.getCode()).isEqualTo("PHONE_VERIFICATION_DISABLED"));
+
+            // Refused before the address is even looked up: nothing is sent, nothing is
+            // stored, and the caller learns nothing about who is registered.
+            then(users).shouldHaveNoInteractions();
+            then(phoneOtps).shouldHaveNoInteractions();
+            then(notifications).shouldHaveNoInteractions();
+        }
+
+        @Test
+        void refusesToVerifyACode() {
+            assertThatExceptionOfType(BusinessRuleViolationException.class)
+                    .isThrownBy(() -> disabled.verifyOtp(new VerifyOtpRequest(EMAIL, "123456")))
+                    .satisfies(ex -> assertThat(ex.getCode()).isEqualTo("PHONE_VERIFICATION_DISABLED"));
+
+            then(users).shouldHaveNoInteractions();
+            then(phoneOtps).shouldHaveNoInteractions();
         }
     }
 

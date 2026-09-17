@@ -195,9 +195,18 @@ public abstract class User extends BaseEntity {
         this.preferredLanguage = required(language, "language");
     }
 
-    /** True once both channels are confirmed — the precondition {@link #activate()} enforces. */
+    /**
+     * True once every channel the platform currently verifies is confirmed — the
+     * precondition {@link #activate()} enforces.
+     *
+     * <p>Only the email address counts today. Phone verification is built but not yet
+     * switched on (no SMS gateway account), and {@code phoneVerified} stays false until
+     * it is, so requiring it here would leave every account stuck in
+     * {@link AccountStatus#PENDING_VERIFICATION}. Add {@code && phoneVerified} back when
+     * registration starts sending a code again.
+     */
     public boolean isFullyVerified() {
-        return emailVerified && phoneVerified;
+        return emailVerified;
     }
 
     /** Guard for this class and its subtypes: nothing may be changed once deleted. */

@@ -71,11 +71,13 @@ class AuthFlowIT extends AbstractIntegrationTest {
                 // Nothing internal leaves the server, whatever the entity holds.
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
 
+        // Signing up sends exactly one message: the verification link. Phone
+        // verification is switched off, so no OTP goes out alongside it.
         List<Notification> sent = capturedNotifications();
+        assertThat(sent).extracting(Notification::getType)
+                .containsExactly(NotificationType.EMAIL_VERIFICATION);
         Notification verificationEmail = notificationOfType(sent, NotificationType.EMAIL_VERIFICATION);
-        Notification otpSms = notificationOfType(sent, NotificationType.PHONE_OTP);
         assertThat(verificationEmail.getRecipient()).isEqualTo(EMAIL);
-        assertThat(otpSms.getRecipient()).isEqualTo(PHONE);
 
         // A pending account cannot sign in, and is told why rather than being told its
         // password is wrong.
@@ -88,12 +90,6 @@ class AuthFlowIT extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\": \"%s\"}".formatted(tokenFrom(verificationEmail, "verificationUrl"))))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(post("/api/auth/verify-otp")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\": \"%s\", \"code\": \"%s\"}"
-                                .formatted(EMAIL, otpSms.getVariables().get("code"))))
                 .andExpect(status().isOk());
 
         JsonNode tokens = body(mockMvc.perform(post("/api/auth/login")
@@ -111,7 +107,7 @@ class AuthFlowIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.email").value(EMAIL))
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.emailVerified").value(true))
-                .andExpect(jsonPath("$.data.phoneVerified").value(true))
+                .andExpect(jsonPath("$.data.phoneVerified").value(false))
                 .andExpect(jsonPath("$.data.lastLoginAt").isNotEmpty());
 
         JsonNode rotated = body(mockMvc.perform(post("/api/auth/refresh")

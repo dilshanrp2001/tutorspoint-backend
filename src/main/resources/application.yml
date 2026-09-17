@@ -114,6 +114,13 @@ tutorspoint:
     email-verification-ttl: 24h
     password-reset-ttl: 30m
     otp-ttl: 5m
+    # Off until there is an SMS gateway account. Signup sends one message — the email
+    # verification link — and /auth/request-otp and /auth/verify-otp refuse, so no second
+    # code lands in the same inbox. Turning this on is the switch back to two-channel
+    # verification: set it true with OTP_DELIVERY=SMS, and restore the phoneVerified check
+    # in User#isFullyVerified().
+    phone-verification-enabled: ${PHONE_VERIFICATION_ENABLED:false}
+    # Only consulted while phone-verification-enabled is true.
     # EMAIL until there is an SMS gateway account: the code goes to the registered address
     # over the mail transport we already pay for. This verifies the address, not the
     # handset, so the phone number is effectively unproven while it is set. Switch to SMS

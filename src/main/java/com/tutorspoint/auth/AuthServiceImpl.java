@@ -77,6 +77,7 @@ public class AuthServiceImpl implements AuthService {
     private static final String ERROR_OTP_SEND_LIMIT = "OTP_SEND_LIMIT_EXCEEDED";
     private static final String ERROR_OTP_INVALID = "OTP_INVALID";
     private static final String ERROR_OTP_NOT_REQUESTED = "OTP_NOT_REQUESTED";
+    private static final String ERROR_PHONE_VERIFICATION_OFF = "PHONE_VERIFICATION_DISABLED";
     private static final String ERROR_EMAIL_TOKEN_INVALID = "EMAIL_VERIFICATION_TOKEN_INVALID";
     private static final String ERROR_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID";
     private static final String ERROR_INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
@@ -123,8 +124,9 @@ public class AuthServiceImpl implements AuthService {
         user = users.saveAndFlush(user);
         log.info("Registered account {} as {}", user.getId(), user.getRole());
 
+        // One message per signup: the verification link. The phone OTP is deliberately
+        // not sent here — see AuthProperties#phoneVerificationEnabled.
         sendEmailVerification(user);
-        sendOtpTo(user);
         return accountMapper.toAccountResponse(user);
     }
 
@@ -152,6 +154,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void sendOtp(SendOtpRequest request) {
+        requirePhoneVerificationEnabled();
         Optional<User> found = users.findByEmail(normalise(request.email()));
         if (found.isEmpty()) {
             log.debug("OTP requested for an address with no account");
@@ -168,6 +171,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void verifyOtp(VerifyOtpRequest request) {
+        requirePhoneVerificationEnabled();
         User user = users.findByEmail(normalise(request.email()))
                 .orElseThrow(() -> new BusinessRuleViolationException(ERROR_OTP_INVALID,
                         "That code is not valid"));
@@ -342,6 +346,18 @@ public class AuthServiceImpl implements AuthService {
      * arrive. A suspended account is not reopened by re-verifying: that is a moderation
      * decision, and only an administrator reverses it.
      */
+    /**
+     * Refuses loudly rather than quietly doing nothing: while phone verification is off
+     * there is no code to send or check, and a caller that reaches here is running
+     * against a contract the deployment does not currently offer.
+     */
+    private void requirePhoneVerificationEnabled() {
+        if (!authProperties.phoneVerificationEnabled()) {
+            throw new BusinessRuleViolationException(ERROR_PHONE_VERIFICATION_OFF,
+                    "Phone verification is not enabled");
+        }
+    }
+
     private void activateIfFullyVerified(User user) {
         if (user.getStatus() == AccountStatus.PENDING_VERIFICATION && user.isFullyVerified()) {
             user.activate();
