@@ -49,7 +49,7 @@ public class EnquiryController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Ask a tutor a question",
-            description = "Opens a thread with a tutor. Parents only, and only active accounts. "
+            description = "Opens a thread with a tutor. Parents and students only, and only active accounts. "
                     + "Phone numbers and email addresses in the message are replaced with a notice "
                     + "until the tutor has replied. Contact details are masked on the response, "
                     + "because by definition the tutor has not answered yet.")
@@ -60,7 +60,7 @@ public class EnquiryController {
 
     @GetMapping
     @Operation(summary = "My enquiries",
-            description = "Role-aware: a parent sees what they sent (FR-P2), a tutor what they "
+            description = "Role-aware: a parent or student sees what they sent (FR-P2), a tutor what they "
                     + "received. Newest first. No contact details appear in a list, revealed or not.")
     public ApiResponse<EnquiryListResponse> myEnquiries(
             @RequestParam(required = false) EnquiryStatus status,

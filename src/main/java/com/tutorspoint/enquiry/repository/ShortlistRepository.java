@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * A parent's saved tutors (FR-P1).
+ * A seeker's saved tutors (FR-P1).
  *
- * <p>Owner-scoped like {@code ChildProfileRepository}: every finder takes the parent id, so
+ * <p>Owner-scoped like {@code ChildProfileRepository}: every finder takes the seeker id, so
  * nothing above this layer has an owner comparison to forget.
  */
 public interface ShortlistRepository extends JpaRepository<Shortlist, Long> {
@@ -20,13 +20,13 @@ public interface ShortlistRepository extends JpaRepository<Shortlist, Long> {
      * definition, so it is read in one go rather than paged.
      */
     @EntityGraph(attributePaths = {"tutor"})
-    List<Shortlist> findByParentIdOrderByCreatedAtDesc(Long parentId);
+    List<Shortlist> findBySeekerIdOrderByCreatedAtDesc(Long seekerId);
 
     @EntityGraph(attributePaths = {"tutor"})
-    Optional<Shortlist> findByParentIdAndTutorId(Long parentId, Long tutorId);
+    Optional<Shortlist> findBySeekerIdAndTutorId(Long seekerId, Long tutorId);
 
-    /** Removing a tutor the parent never saved is not an error; the delete simply affects nothing. */
-    void deleteByParentIdAndTutorId(Long parentId, Long tutorId);
+    /** Removing a tutor the seeker never saved is not an error; the delete simply affects nothing. */
+    void deleteBySeekerIdAndTutorId(Long seekerId, Long tutorId);
 
-    boolean existsByParentIdAndTutorId(Long parentId, Long tutorId);
+    boolean existsBySeekerIdAndTutorId(Long seekerId, Long tutorId);
 }

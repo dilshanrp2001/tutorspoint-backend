@@ -20,20 +20,20 @@ import com.tutorspoint.common.domain.Language;
  * {@link AuditableEvent}: the reveal is audited because it happened, not because the service
  * remembered to say so. The actor is the tutor, whose reply is what opened the channel.
  *
- * @param enquiryId      the thread, for the deep link the parent follows
- * @param parentId       who is being answered
- * @param parentEmail    where the notification goes
- * @param parentName     for the greeting
- * @param parentLanguage the language the parent reads
+ * @param enquiryId      the thread, for the deep link the seeker follows
+ * @param seekerId       who is being answered — a parent or a student
+ * @param seekerEmail    where the notification goes
+ * @param seekerName     for the greeting
+ * @param seekerLanguage the language the seeker reads
  * @param tutorId        who answered, for the analytics counters
  * @param tutorName      the name of the tutor who replied
  */
 public record EnquiryRespondedEvent(
         Long enquiryId,
-        Long parentId,
-        String parentEmail,
-        String parentName,
-        Language parentLanguage,
+        Long seekerId,
+        String seekerEmail,
+        String seekerName,
+        Language seekerLanguage,
         Long tutorId,
         String tutorName) implements AuditableEvent {
 
@@ -41,7 +41,7 @@ public record EnquiryRespondedEvent(
     public AuditEntry auditEntry() {
         return new AuditEntry(tutorId, AuditAction.CONTACT_REVEALED, AuditTargetType.ENQUIRY, enquiryId,
                 AuditEntry.values("contactRevealed", false),
-                AuditEntry.values("contactRevealed", true, "parentId", parentId, "tutorId", tutorId),
+                AuditEntry.values("contactRevealed", true, "seekerId", seekerId, "tutorId", tutorId),
                 null);
     }
 }

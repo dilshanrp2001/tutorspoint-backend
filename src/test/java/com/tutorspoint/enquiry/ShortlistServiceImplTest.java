@@ -66,7 +66,7 @@ class ShortlistServiceImplTest {
     void listingIsOwnerScopedAndNotAnNPlusOne() {
         Shortlist entry = new Shortlist(parent, tutor, "Cheaper, but further away");
         given(currentUser.requireId()).willReturn(PARENT_ID);
-        given(shortlists.findByParentIdOrderByCreatedAtDesc(PARENT_ID)).willReturn(List.of(entry));
+        given(shortlists.findBySeekerIdOrderByCreatedAtDesc(PARENT_ID)).willReturn(List.of(entry));
         given(tutorProfiles.findByTutorIdInAndStatus(List.of(TUTOR_ID), ProfileStatus.PUBLISHED))
                 .willReturn(List.of(profile()));
 
@@ -80,7 +80,7 @@ class ShortlistServiceImplTest {
     @DisplayName("an empty shortlist asks the profile table nothing at all")
     void anEmptyListQueriesNothingFurther() {
         given(currentUser.requireId()).willReturn(PARENT_ID);
-        given(shortlists.findByParentIdOrderByCreatedAtDesc(PARENT_ID)).willReturn(List.of());
+        given(shortlists.findBySeekerIdOrderByCreatedAtDesc(PARENT_ID)).willReturn(List.of());
 
         assertThat(service.myShortlist(Language.EN)).isEmpty();
         then(tutorProfiles).shouldHaveNoInteractions();
@@ -91,7 +91,7 @@ class ShortlistServiceImplTest {
     void anUnpublishedTutorKeepsItsRow() {
         Shortlist entry = new Shortlist(parent, tutor, null);
         given(currentUser.requireId()).willReturn(PARENT_ID);
-        given(shortlists.findByParentIdOrderByCreatedAtDesc(PARENT_ID)).willReturn(List.of(entry));
+        given(shortlists.findBySeekerIdOrderByCreatedAtDesc(PARENT_ID)).willReturn(List.of(entry));
         given(tutorProfiles.findByTutorIdInAndStatus(List.of(TUTOR_ID), ProfileStatus.PUBLISHED))
                 .willReturn(List.of());
 
@@ -107,7 +107,7 @@ class ShortlistServiceImplTest {
         given(currentUser.requireId()).willReturn(PARENT_ID);
         given(tutorProfiles.findByTutorIdAndStatus(TUTOR_ID, ProfileStatus.PUBLISHED))
                 .willReturn(Optional.of(profile()));
-        given(shortlists.findByParentIdAndTutorId(PARENT_ID, TUTOR_ID)).willReturn(Optional.of(existing));
+        given(shortlists.findBySeekerIdAndTutorId(PARENT_ID, TUTOR_ID)).willReturn(Optional.of(existing));
 
         service.save(TUTOR_ID, new ShortlistRequest("Second thoughts"), Language.EN);
 
@@ -132,7 +132,7 @@ class ShortlistServiceImplTest {
 
         service.remove(TUTOR_ID);
 
-        then(shortlists).should().deleteByParentIdAndTutorId(PARENT_ID, TUTOR_ID);
+        then(shortlists).should().deleteBySeekerIdAndTutorId(PARENT_ID, TUTOR_ID);
     }
 
     private TutorProfile profile() {

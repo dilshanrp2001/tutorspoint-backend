@@ -13,8 +13,8 @@ import java.util.List;
  *
  * <p>{@code contact} is the masking rule made visible in the API (FR-E2, NFR-5). It is null
  * until the tutor has replied, and from then on it holds the <em>other</em> participant's
- * details: the parent learns how to reach the tutor who answered them, and the tutor — who
- * opened the channel by answering — learns how to reach that parent. It is never anybody
+ * details: the seeker learns how to reach the tutor who answered them, and the tutor — who
+ * opened the channel by answering — learns how to reach that seeker. It is never anybody
  * else's contact details and never a third party's.
  *
  * <p>{@code contactRevealed} says the same thing as a non-null {@code contact}, and it is
@@ -28,17 +28,18 @@ public record EnquiryDetailResponse(
         Long tutorId,
         String tutorName,
 
-        Long parentId,
-        String parentName,
+        @Schema(description = "The parent or student who opened the thread")
+        Long seekerId,
+        String seekerName,
 
-        @Schema(description = "The child this is about, when the parent named one")
+        @Schema(description = "The child this is about, when a parent named one. Always null for a student.")
         EnquiryChildDto child,
 
         ReferenceItemResponse subject,
         ReferenceItemResponse examLevel,
         ReferenceItemResponse preferredFormat,
 
-        @Schema(description = "Where the parent wants the classes. Null when online is true.")
+        @Schema(description = "Where the seeker wants the classes. Null when online is true.")
         ReferenceItemResponse preferredArea,
 
         boolean online,

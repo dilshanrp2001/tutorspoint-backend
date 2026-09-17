@@ -45,7 +45,7 @@ class EnquiryNotificationListenerTest {
         assertThat(sent.getLanguage()).isEqualTo(Language.SI);
         assertThat(sent.getVariables())
                 .containsEntry("tutorName", "Kasun")
-                .containsEntry("parentName", "Niluka")
+                .containsEntry("seekerName", "Niluka")
                 .containsEntry("subjectName", "රසායන විද්‍යාව")
                 .containsEntry("threadUrl", "https://tutorspoint.lk/enquiries/77");
     }
@@ -72,7 +72,7 @@ class EnquiryNotificationListenerTest {
         assertThat(sent.getRecipient()).isEqualTo("niluka@example.lk");
         assertThat(sent.getLanguage()).isEqualTo(Language.TA);
         assertThat(sent.getVariables())
-                .containsEntry("parentName", "Niluka")
+                .containsEntry("seekerName", "Niluka")
                 .containsEntry("tutorName", "Kasun")
                 .containsEntry("threadUrl", "https://tutorspoint.lk/enquiries/77");
     }

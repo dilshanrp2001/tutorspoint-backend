@@ -11,7 +11,7 @@ import com.tutorspoint.enquiry.dto.EnquiryRequest;
 import com.tutorspoint.enquiry.dto.EnquiryUnreadCountResponse;
 
 /**
- * On-platform enquiries between a parent and a tutor (FR-E1 - FR-E3).
+ * On-platform enquiries between a seeker (a parent or a student) and a tutor (FR-E1 - FR-E3).
  *
  * <p><strong>No signature carries a participant.</strong> The caller is always one of the two,
  * taken from the security context, and every thread is reached through a query that already
@@ -42,7 +42,7 @@ public interface EnquiryService {
     EnquiryDetailResponse create(EnquiryRequest request, Language language);
 
     /**
-     * The caller's threads, newest first — sent if they are a parent, received if they are a
+     * The caller's threads, newest first — sent if they are a parent or student, received if they are a
      * tutor (FR-P2). Same shape either way: it is one list of threads read from two ends.
      *
      * @param status optional filter; null returns every status

@@ -2,6 +2,7 @@ package com.tutorspoint.enquiry.domain;
 
 import com.tutorspoint.auth.domain.ChildProfile;
 import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.common.domain.ClassFormat;
 import com.tutorspoint.common.domain.Language;
@@ -32,6 +33,7 @@ class EnquiryTest {
     private static final Long PARENT_ID = 1L;
     private static final Long TUTOR_ID = 2L;
     private static final Long STRANGER_ID = 3L;
+    private static final Long STUDENT_ID = 4L;
     private static final Instant NOW = Instant.parse("2026-03-01T09:00:00Z");
 
     private final Parent parent = parent();
@@ -218,6 +220,33 @@ class EnquiryTest {
     }
 
     @Test
+    @DisplayName("a student enquires for themselves, as a full participant")
+    void aStudentIsASeekerLikeAParent() {
+        Student student = student();
+
+        Enquiry enquiry = Enquiry.open(student, tutor, null, subject(), examLevel(),
+                ClassFormat.ONLINE, null, true, "Do you teach A/L Physics online?");
+
+        assertThat(enquiry.getSeeker()).isSameAs(student);
+        assertThat(enquiry.isParticipant(STUDENT_ID)).isTrue();
+        assertThat(enquiry.counterpartOf(TUTOR_ID)).isSameAs(student);
+
+        enquiry.reply(tutor, "Yes, on Saturdays.", NOW);
+        assertThat(enquiry.contactRevealed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a student has no children to name, not even one that exists")
+    void aStudentCannotNameAChild() {
+        ChildProfile someChild = parent.addChild("Sanduni", "Grade 11", "GCE O/L", null, null);
+
+        assertThatExceptionOfType(BusinessRuleViolationException.class)
+                .isThrownBy(() -> Enquiry.open(student(), tutor, someChild, subject(), examLevel(),
+                        ClassFormat.ONE_TO_ONE, area(), false, "Hello"))
+                .satisfies(refused -> assertThat(refused.getCode()).isEqualTo("CHILD_PROFILE_NOT_ALLOWED"));
+    }
+
+    @Test
     @DisplayName("a blank message is not an enquiry")
     void theOpeningMessageMustSaySomething() {
         assertThatExceptionOfType(IllegalArgumentException.class)
@@ -233,6 +262,12 @@ class EnquiryTest {
         Parent parent = new Parent("niluka@example.lk", "hash", "Niluka", "+94770000001", Language.EN);
         ReflectionTestUtils.setField(parent, "id", PARENT_ID);
         return parent;
+    }
+
+    private static Student student() {
+        Student student = new Student("ashan@example.lk", "hash", "Ashan", "+94770000004", Language.EN);
+        ReflectionTestUtils.setField(student, "id", STUDENT_ID);
+        return student;
     }
 
     private static Tutor tutor() {

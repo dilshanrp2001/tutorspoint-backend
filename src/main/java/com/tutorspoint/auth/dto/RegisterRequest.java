@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-/** A new tutor or parent account (FR-A1). The role is chosen by the caller, in the body. */
+/** A new tutor, parent or student account (FR-A1). The role is chosen by the caller, in the body. */
 public record RegisterRequest(
 
         @NotNull(message = "{validation.role.required}")

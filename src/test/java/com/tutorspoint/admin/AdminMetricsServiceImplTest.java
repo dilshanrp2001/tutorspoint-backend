@@ -94,7 +94,8 @@ class AdminMetricsServiceImplTest {
     @DisplayName("the figures are assembled as counted, and the rate is responded over sent")
     void assemblesTheFigures() {
         when(users.countRegistrationsByRole(any(), any()))
-                .thenReturn(List.of(roleCount(Role.TUTOR, 12), roleCount(Role.PARENT, 30), roleCount(Role.ADMIN, 1)));
+                .thenReturn(List.of(roleCount(Role.TUTOR, 12), roleCount(Role.PARENT, 30), roleCount(Role.STUDENT, 5),
+                        roleCount(Role.ADMIN, 1)));
         when(enquiries.countSent(any(), any(), eq(EnquiryStatus.SPAM))).thenReturn(40L);
         when(enquiries.countResponded(any(), any(), eq(EnquiryStatus.SPAM))).thenReturn(30L);
         when(searches.sumBetween(any(), any())).thenReturn(512L);
@@ -105,7 +106,7 @@ class AdminMetricsServiceImplTest {
         AdminMetricsResponse response = service.summary(new MetricsWindow(null, null));
 
         // Admins are provisioned, not registered.
-        assertThat(response.registrations()).isEqualTo(new AdminMetricsResponse.Registrations(12, 30, 42));
+        assertThat(response.registrations()).isEqualTo(new AdminMetricsResponse.Registrations(12, 30, 5, 47));
         assertThat(response.enquiriesSent()).isEqualTo(40);
         assertThat(response.enquiriesResponded()).isEqualTo(30);
         assertThat(response.responseRate()).isEqualTo(0.75);

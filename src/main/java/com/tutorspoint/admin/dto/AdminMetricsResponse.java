@@ -35,6 +35,6 @@ public record AdminMetricsResponse(
         long documentsAwaitingReview) {
 
     /** Admins are provisioned, not registered, so they are not counted here. */
-    public record Registrations(long tutors, long parents, long total) {
+    public record Registrations(long tutors, long parents, long students, long total) {
     }
 }

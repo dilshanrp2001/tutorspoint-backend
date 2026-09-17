@@ -1,6 +1,6 @@
 package com.tutorspoint.enquiry.domain;
 
-import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Seeker;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.common.domain.BaseEntity;
 import jakarta.persistence.Column;
@@ -15,20 +15,21 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * A tutor a parent has saved to come back to (FR-P1), with the parent's own note about why.
+ * A tutor a seeker — a parent or a student — has saved to come back to (FR-P1), with their
+ * own note about why.
  *
  * <p>In the enquiry package rather than a package of its own because a shortlist is the step
- * before an enquiry: a parent shortlists three tutors, then enquires to two of them, and the
+ * before an enquiry: a seeker shortlists three tutors, then enquires to two of them, and the
  * two features are read together on every screen that shows either.
  *
- * <p><strong>The note is private to the parent.</strong> It is a reminder — "cheaper, but
+ * <p><strong>The note is private to the seeker.</strong> It is a reminder — "cheaper, but
  * further away" — not feedback, and it never appears in anything the tutor can read. Nothing
  * here is masked, because saving a tutor is not contacting one: a shortlist entry carries no
  * contact details at all.
  */
 @Entity
 @Table(name = "shortlists",
-        uniqueConstraints = @UniqueConstraint(name = "uq_shortlists_pair", columnNames = {"parent_id", "tutor_id"}))
+        uniqueConstraints = @UniqueConstraint(name = "uq_shortlists_pair", columnNames = {"seeker_id", "tutor_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Shortlist extends BaseEntity {
@@ -37,8 +38,8 @@ public class Shortlist extends BaseEntity {
     public static final int MAX_NOTE_LENGTH = 500;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "parent_id", nullable = false, updatable = false)
-    private Parent parent;
+    @JoinColumn(name = "seeker_id", nullable = false, updatable = false)
+    private Seeker seeker;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_id", nullable = false, updatable = false)
@@ -47,15 +48,15 @@ public class Shortlist extends BaseEntity {
     @Column(name = "note", length = MAX_NOTE_LENGTH)
     private String note;
 
-    public Shortlist(Parent parent, Tutor tutor, String note) {
-        this.parent = required(parent, "parent");
+    public Shortlist(Seeker seeker, Tutor tutor, String note) {
+        this.seeker = required(seeker, "seeker");
         this.tutor = required(tutor, "tutor");
         this.note = normaliseNote(note);
     }
 
     /**
-     * Rewrites the parent's note. Saving the same tutor again is this, not a second row:
-     * the pair is unique, and a parent who re-saves has changed their mind about the note,
+     * Rewrites the seeker's note. Saving the same tutor again is this, not a second row:
+     * the pair is unique, and a seeker who re-saves has changed their mind about the note,
      * not created another entry.
      */
     public void changeNote(String note) {

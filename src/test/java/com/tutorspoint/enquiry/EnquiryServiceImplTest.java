@@ -145,12 +145,12 @@ class EnquiryServiceImplTest {
         ArgumentCaptor<EnquiryCreatedEvent> published = ArgumentCaptor.forClass(EnquiryCreatedEvent.class);
         then(events).should().publishEvent(published.capture());
         assertThat(published.getValue()).satisfies(event -> {
-            assertThat(event.parentId()).isEqualTo(PARENT_ID);
+            assertThat(event.seekerId()).isEqualTo(PARENT_ID);
             assertThat(event.tutorId()).isEqualTo(TUTOR_ID);
             assertThat(event.tutorEmail()).isEqualTo(tutor.getEmail());
             // The tutor reads Sinhala; the subject name is resolved for them, not for the caller.
             assertThat(event.tutorLanguage()).isEqualTo(Language.SI);
-            assertThat(event.parentName()).isEqualTo(parent.getFullName());
+            assertThat(event.seekerName()).isEqualTo(parent.getFullName());
         });
     }
 
@@ -178,7 +178,7 @@ class EnquiryServiceImplTest {
     @Test
     @DisplayName("a second live thread with the same tutor is refused")
     void oneLiveThreadPerTutor() {
-        given(enquiries.existsByParentIdAndTutorIdAndStatusIn(anyLong(), anyLong(), anySet())).willReturn(true);
+        given(enquiries.existsBySeekerIdAndTutorIdAndStatusIn(anyLong(), anyLong(), anySet())).willReturn(true);
 
         assertThatExceptionOfType(BusinessRuleViolationException.class)
                 .isThrownBy(() -> service.create(REQUEST, Language.EN))
@@ -189,7 +189,7 @@ class EnquiryServiceImplTest {
     @Test
     @DisplayName("the hourly cap is counted from an hour ago, and refuses the one over")
     void theHourlyCapIsEnforced() {
-        given(enquiries.countByParentIdAndCreatedAtAfter(PARENT_ID, NOW.minusSeconds(3600)))
+        given(enquiries.countBySeekerIdAndCreatedAtAfter(PARENT_ID, NOW.minusSeconds(3600)))
                 .willReturn((long) properties.maxPerHour());
 
         assertThatExceptionOfType(BusinessRuleViolationException.class)
@@ -201,7 +201,7 @@ class EnquiryServiceImplTest {
     @Test
     @DisplayName("a thread the caller is not in is not found, rather than forbidden")
     void nonParticipantsGetNotFound() {
-        given(enquiries.findByIdAndParentId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.empty());
+        given(enquiries.findByIdAndSeekerId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.empty());
 
         assertThatExceptionOfType(ResourceNotFoundException.class)
                 .isThrownBy(() -> service.thread(ENQUIRY_ID, Language.EN));
@@ -211,7 +211,7 @@ class EnquiryServiceImplTest {
     @DisplayName("an unanswered thread hands the mapper no contact details")
     void nothingIsRevealedBeforeTheTutorReplies() {
         Enquiry enquiry = existingThread();
-        given(enquiries.findByIdAndParentId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(enquiry));
+        given(enquiries.findByIdAndSeekerId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(enquiry));
 
         service.thread(ENQUIRY_ID, Language.EN);
 
@@ -224,7 +224,7 @@ class EnquiryServiceImplTest {
     void theParentSeesTheTutorsDetailsAfterTheReply() {
         Enquiry enquiry = existingThread();
         enquiry.reply(tutor, "Yes, weekends are free", NOW);
-        given(enquiries.findByIdAndParentId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(enquiry));
+        given(enquiries.findByIdAndSeekerId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(enquiry));
         ContactDetailsDto tutorContact =
                 new ContactDetailsDto(tutor.getFullName(), tutor.getEmail(), tutor.getPhoneNumber());
         given(enquiryMapper.toContact(tutor)).willReturn(tutorContact);
@@ -246,8 +246,8 @@ class EnquiryServiceImplTest {
 
         ArgumentCaptor<EnquiryRespondedEvent> published = ArgumentCaptor.forClass(EnquiryRespondedEvent.class);
         then(events).should().publishEvent(published.capture());
-        assertThat(published.getValue().parentEmail()).isEqualTo(parent.getEmail());
-        assertThat(published.getValue().parentLanguage()).isEqualTo(Language.EN);
+        assertThat(published.getValue().seekerEmail()).isEqualTo(parent.getEmail());
+        assertThat(published.getValue().seekerLanguage()).isEqualTo(Language.EN);
 
         service.addMessage(ENQUIRY_ID, new EnquiryMessageRequest("Four o'clock?"), Language.EN);
 
@@ -261,7 +261,7 @@ class EnquiryServiceImplTest {
     void scrubbingStopsWhenTheChannelOpens() {
         Enquiry enquiry = existingThread();
         given(currentUser.require()).willReturn(new AuthenticatedUser(PARENT_ID, parent.getEmail(), Role.PARENT));
-        given(enquiries.findByIdAndParentId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(enquiry));
+        given(enquiries.findByIdAndSeekerId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(enquiry));
 
         service.addMessage(ENQUIRY_ID, new EnquiryMessageRequest("Ring 0771234567"), Language.EN);
         then(scrubber).should().scrub("Ring 0771234567", Language.EN);
@@ -278,7 +278,7 @@ class EnquiryServiceImplTest {
     @DisplayName("a tutor reading an unopened enquiry marks it VIEWED; a parent reading their own does not")
     void onlyTheTutorMarksAThreadViewed() {
         Enquiry parentRead = existingThread();
-        given(enquiries.findByIdAndParentId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(parentRead));
+        given(enquiries.findByIdAndSeekerId(ENQUIRY_ID, PARENT_ID)).willReturn(Optional.of(parentRead));
         service.thread(ENQUIRY_ID, Language.EN);
         assertThat(parentRead.getStatus()).isEqualTo(EnquiryStatus.SENT);
 
@@ -302,7 +302,7 @@ class EnquiryServiceImplTest {
     @Test
     @DisplayName("the unread count is asked of the caller's own side, and an administrator has none")
     void theUnreadCountIsTheCallersOwn() {
-        given(enquiries.countUnreadForParent(PARENT_ID)).willReturn(3L);
+        given(enquiries.countUnreadForSeeker(PARENT_ID)).willReturn(3L);
         assertThat(service.unreadCount().unreadCount()).isEqualTo(3);
 
         given(currentUser.require()).willReturn(new AuthenticatedUser(TUTOR_ID, tutor.getEmail(), Role.TUTOR));
@@ -311,7 +311,7 @@ class EnquiryServiceImplTest {
 
         given(currentUser.require()).willReturn(new AuthenticatedUser(99L, "admin@tutorspoint.lk", Role.ADMIN));
         assertThat(service.unreadCount().unreadCount()).isZero();
-        then(enquiries).should(never()).countUnreadForParent(99L);
+        then(enquiries).should(never()).countUnreadForSeeker(99L);
         then(enquiries).should(never()).countUnreadForTutor(99L);
     }
 

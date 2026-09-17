@@ -43,7 +43,7 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Register as a tutor or a parent",
+    @Operation(summary = "Register as a tutor, a parent or a student",
             description = "Creates a PENDING_VERIFICATION account, then emails a verification "
                     + "link and texts a six-digit code. The account activates once both are confirmed.")
     public ApiResponse<AccountResponse> register(@Valid @RequestBody RegisterRequest request) {

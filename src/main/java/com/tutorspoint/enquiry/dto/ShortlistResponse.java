@@ -33,7 +33,7 @@ public record ShortlistResponse(
         @Schema(description = "The public card for this tutor. Null if they have unpublished their profile.")
         TutorCardDto tutor,
 
-        @Schema(description = "The parent's private note. Never shown to the tutor.")
+        @Schema(description = "The seeker's private note. Never shown to the tutor.")
         String note,
 
         @Schema(description = "When the tutor was saved")

@@ -1,7 +1,7 @@
 package com.tutorspoint.enquiry;
 
 import com.tutorspoint.auth.domain.AccountStatus;
-import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Seeker;
 import com.tutorspoint.auth.repository.UserRepository;
 import com.tutorspoint.auth.security.CurrentUser;
 import com.tutorspoint.common.domain.Language;
@@ -26,10 +26,10 @@ import java.util.stream.Collectors;
 import java.util.function.Function;
 
 /**
- * A parent's saved tutors, owner-scoped by construction.
+ * A seeker's saved tutors, owner-scoped by construction.
  *
- * <p>{@code hasRole('PARENT')} on the class is the role gate; the owner gate is the repository,
- * whose finders all take the parent id. Nothing here compares an owner by hand, so there is no
+ * <p>{@code hasAnyRole('PARENT', 'STUDENT')} on the class is the role gate; the owner gate is the
+ * repository, whose finders all take the seeker id. Nothing here compares an owner by hand, so there is no
  * comparison to forget.
  *
  * <p>No masking rule appears in this class, and that is not an omission: a shortlist entry
@@ -39,7 +39,7 @@ import java.util.function.Function;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('PARENT')")
+@PreAuthorize("hasAnyRole('PARENT', 'STUDENT')")
 public class ShortlistServiceImpl implements ShortlistService {
 
     private final ShortlistRepository shortlists;
@@ -52,7 +52,7 @@ public class ShortlistServiceImpl implements ShortlistService {
     @Override
     @Transactional(readOnly = true)
     public List<ShortlistResponse> myShortlist(Language language) {
-        List<Shortlist> saved = shortlists.findByParentIdOrderByCreatedAtDesc(currentUser.requireId());
+        List<Shortlist> saved = shortlists.findBySeekerIdOrderByCreatedAtDesc(currentUser.requireId());
         if (saved.isEmpty()) {
             return List.of();
         }
@@ -78,26 +78,26 @@ public class ShortlistServiceImpl implements ShortlistService {
     @Override
     @Transactional
     public ShortlistResponse save(Long tutorId, ShortlistRequest request, Language language) {
-        Long parentId = currentUser.requireId();
+        Long seekerId = currentUser.requireId();
         TutorProfile profile = requireListedProfile(tutorId);
 
-        Shortlist entry = shortlists.findByParentIdAndTutorId(parentId, tutorId)
+        Shortlist entry = shortlists.findBySeekerIdAndTutorId(seekerId, tutorId)
                 .map(existing -> {
                     existing.changeNote(request.note());
                     return existing;
                 })
-                .orElseGet(() -> shortlists.save(new Shortlist(requireParent(parentId), profile.getTutor(),
+                .orElseGet(() -> shortlists.save(new Shortlist(requireSeeker(seekerId), profile.getTutor(),
                         request.note())));
 
-        log.info("Parent {} shortlisted tutor {}", parentId, tutorId);
+        log.info("Account {} shortlisted tutor {}", seekerId, tutorId);
         return enquiryMapper.toShortlistResponse(entry, profile, language, labels);
     }
 
     @Override
     @Transactional
     public void remove(Long tutorId) {
-        shortlists.deleteByParentIdAndTutorId(currentUser.requireId(), tutorId);
-        log.info("Parent {} removed tutor {} from their shortlist", currentUser.requireId(), tutorId);
+        shortlists.deleteBySeekerIdAndTutorId(currentUser.requireId(), tutorId);
+        log.info("Account {} removed tutor {} from their shortlist", currentUser.requireId(), tutorId);
     }
 
     /**
@@ -113,10 +113,10 @@ public class ShortlistServiceImpl implements ShortlistService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor", tutorId));
     }
 
-    private Parent requireParent(Long parentId) {
-        return users.findById(parentId)
-                .filter(Parent.class::isInstance)
-                .map(Parent.class::cast)
-                .orElseThrow(() -> new ResourceNotFoundException("Parent account", parentId));
+    private Seeker requireSeeker(Long seekerId) {
+        return users.findById(seekerId)
+                .filter(Seeker.class::isInstance)
+                .map(Seeker.class::cast)
+                .orElseThrow(() -> new ResourceNotFoundException("Seeker account", seekerId));
     }
 }

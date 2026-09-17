@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
 /**
- * Accounts of every role. Spring Data resolves the concrete subtype (Tutor, Parent,
+ * Accounts of every role. Spring Data resolves the concrete subtype (Tutor, Parent, Student,
  * Admin) when it loads the row, so a caller that only needs the shared contract can work
  * with {@link User} and never cares which table the rest of the row came from.
  *

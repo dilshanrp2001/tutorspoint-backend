@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Size;
  */
 public record ShortlistRequest(
 
-        @Schema(description = "A private note. Only the parent who wrote it ever sees it.",
+        @Schema(description = "A private note. Only the account that wrote it ever sees it.",
                 example = "Cheaper than the others, but a 40 minute drive")
         @Size(max = EnquiryValidation.NOTE_MAX_LENGTH, message = "{validation.shortlist.note.size}")
         String note) {

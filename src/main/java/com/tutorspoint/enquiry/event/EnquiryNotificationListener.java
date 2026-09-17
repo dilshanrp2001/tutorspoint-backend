@@ -45,24 +45,24 @@ public class EnquiryNotificationListener {
                 .recipient(event.tutorEmail())
                 .language(event.tutorLanguage())
                 .variable("tutorName", event.tutorName())
-                // The parent's name, and nothing else about them. A notification is sent by the
+                // The seeker's name, and nothing else about them. A notification is sent by the
                 // platform to one of its own users; it is not the reveal, and it must not
                 // become a way around it.
-                .variable("parentName", event.parentName())
+                .variable("seekerName", event.seekerName())
                 .variable("subjectName", event.subjectName())
                 .variable("threadUrl", properties.threadUrlFor(event.enquiryId()))
                 .build());
     }
 
-    /** A parent has been answered. Fires on the tutor's first reply only. */
+    /** A seeker has been answered. Fires on the tutor's first reply only. */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onEnquiryResponded(EnquiryRespondedEvent event) {
-        log.debug("Notifying parent {} that enquiry {} was answered", event.parentId(), event.enquiryId());
+        log.debug("Notifying seeker {} that enquiry {} was answered", event.seekerId(), event.enquiryId());
         notifications.send(Notification.builder()
                 .type(NotificationType.ENQUIRY_REPLIED)
-                .recipient(event.parentEmail())
-                .language(event.parentLanguage())
-                .variable("parentName", event.parentName())
+                .recipient(event.seekerEmail())
+                .language(event.seekerLanguage())
+                .variable("seekerName", event.seekerName())
                 .variable("tutorName", event.tutorName())
                 .variable("threadUrl", properties.threadUrlFor(event.enquiryId()))
                 .build());

@@ -62,7 +62,7 @@ class AuditLogListenerTest {
         assertThat(row.getAction()).isEqualTo(AuditAction.CONTACT_REVEALED);
         assertThat(row.getTargetType()).isEqualTo(AuditTargetType.ENQUIRY);
         assertThat(row.getTargetId()).isEqualTo(900L);
-        assertThat(row.getAfterValue()).containsEntry("contactRevealed", true).containsEntry("parentId", 5L);
+        assertThat(row.getAfterValue()).containsEntry("contactRevealed", true).containsEntry("seekerId", 5L);
         // No contact detail is copied into the audit trail, only who could now see whose.
         assertThat(row.getAfterValue().toString()).doesNotContain("p@example.lk");
         assertThat(row.getIpAddress()).isNull();

@@ -75,7 +75,7 @@ public class GlobalExceptionHandler {
 
     /**
      * The body could not be read at all: malformed JSON, or a value outside what the DTO can
-     * hold — {@code "role": "ADMIN"} against an enum that offers only TUTOR and PARENT.
+     * hold — {@code "role": "ADMIN"} against an enum that offers only TUTOR, PARENT and STUDENT.
      *
      * <p>That is the caller's mistake, so it is a 400. Without this it would reach the
      * catch-all and be reported as a server error, which would send a client looking for a

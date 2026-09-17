@@ -4,6 +4,7 @@ import com.tutorspoint.auth.domain.AccountStatus;
 import com.tutorspoint.auth.domain.ChildProfile;
 import com.tutorspoint.auth.domain.Parent;
 import com.tutorspoint.auth.domain.Role;
+import com.tutorspoint.auth.domain.Seeker;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.ChildProfileRepository;
@@ -82,6 +83,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     private static final String ERROR_ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE";
     private static final String ERROR_ALREADY_OPEN = "ENQUIRY_ALREADY_OPEN";
     private static final String ERROR_RATE_LIMITED = "ENQUIRY_RATE_LIMITED";
+    private static final String ERROR_CHILD_NOT_ALLOWED = "CHILD_PROFILE_NOT_ALLOWED";
 
     /** The statuses that mean "this conversation is still live". */
     private static final Set<EnquiryStatus> LIVE_STATUSES =
@@ -107,33 +109,33 @@ public class EnquiryServiceImpl implements EnquiryService {
 
     @Override
     @Transactional
-    @PreAuthorize("hasRole('PARENT')")
+    @PreAuthorize("hasAnyRole('PARENT', 'STUDENT')")
     public EnquiryDetailResponse create(EnquiryRequest request, Language language) {
-        Parent parent = requireActiveParent();
+        Seeker seeker = requireActiveSeeker();
         Tutor tutor = requireListedTutor(request.tutorId());
-        ensureWithinSendingLimits(parent.getId(), tutor.getId());
+        ensureWithinSendingLimits(seeker.getId(), tutor.getId());
 
-        ChildProfile child = resolveChild(request.childProfileId(), parent.getId());
+        ChildProfile child = resolveChild(request.childProfileId(), seeker);
         Subject subject = resolveSubject(request.subjectCode());
         ExamLevel examLevel = resolveExamLevel(request.examLevelCode());
         Area preferredArea = resolveArea(request.preferredAreaCode());
 
         // Scrubbed before the entity ever sees it, so there is no window in which an
-        // unscrubbed body exists in a field somebody might persist by mistake. The parent's
+        // unscrubbed body exists in a field somebody might persist by mistake. The seeker's
         // own language, because the notice replaces words they wrote.
-        String body = scrubber.scrub(request.message(), parent.getPreferredLanguage());
+        String body = scrubber.scrub(request.message(), seeker.getPreferredLanguage());
 
-        Enquiry enquiry = Enquiry.open(parent, tutor, child, subject, examLevel,
+        Enquiry enquiry = Enquiry.open(seeker, tutor, child, subject, examLevel,
                 request.preferredFormat(), preferredArea, request.online(), body);
         // Flushed so the id is in the event and in the response, rather than a null the
         // notification would have to build a link without.
         enquiries.saveAndFlush(enquiry);
 
-        log.info("Parent {} opened enquiry {} with tutor {}", parent.getId(), enquiry.getId(), tutor.getId());
+        log.info("{} {} opened enquiry {} with tutor {}", seeker.getRole(), seeker.getId(), enquiry.getId(), tutor.getId());
         events.publishEvent(new EnquiryCreatedEvent(
                 enquiry.getId(),
-                parent.getId(),
-                parent.getFullName(),
+                seeker.getId(),
+                seeker.getFullName(),
                 tutor.getId(),
                 tutor.getEmail(),
                 tutor.getFullName(),
@@ -164,7 +166,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     public EnquiryUnreadCountResponse unreadCount() {
         AuthenticatedUser caller = currentUser.require();
         long unread = switch (caller.role()) {
-            case PARENT -> enquiries.countUnreadForParent(caller.userId());
+            case PARENT, STUDENT -> enquiries.countUnreadForSeeker(caller.userId());
             case TUTOR -> enquiries.countUnreadForTutor(caller.userId());
             case ADMIN -> 0;
         };
@@ -178,7 +180,7 @@ public class EnquiryServiceImpl implements EnquiryService {
         Enquiry enquiry = requireOwnThread(caller, enquiryId);
 
         // Opening the enquiry is what "viewed" means (FR-E1), and only the tutor can do it:
-        // a parent re-reading their own question has not been answered by anybody.
+        // a seeker re-reading their own question has not been answered by anybody.
         if (caller.role() == Role.TUTOR) {
             enquiry.markViewed();
         }
@@ -211,13 +213,13 @@ public class EnquiryServiceImpl implements EnquiryService {
             enquiries.flush();
             log.info("Tutor {} responded to enquiry {}; contact details are now revealed to both participants",
                     enquiry.getTutor().getId(), enquiry.getId());
-            Parent parent = enquiry.getParent();
+            Seeker seeker = enquiry.getSeeker();
             events.publishEvent(new EnquiryRespondedEvent(
                     enquiry.getId(),
-                    parent.getId(),
-                    parent.getEmail(),
-                    parent.getFullName(),
-                    parent.getPreferredLanguage(),
+                    seeker.getId(),
+                    seeker.getEmail(),
+                    seeker.getFullName(),
+                    seeker.getPreferredLanguage(),
                     enquiry.getTutor().getId(),
                     enquiry.getTutor().getFullName()));
         }
@@ -262,7 +264,7 @@ public class EnquiryServiceImpl implements EnquiryService {
      */
     private Enquiry requireOwnThread(AuthenticatedUser caller, Long enquiryId) {
         Optional<Enquiry> found = switch (caller.role()) {
-            case PARENT -> enquiries.findByIdAndParentId(enquiryId, caller.userId());
+            case PARENT, STUDENT -> enquiries.findByIdAndSeekerId(enquiryId, caller.userId());
             case TUTOR -> enquiries.findByIdAndTutorId(enquiryId, caller.userId());
             case ADMIN -> Optional.empty();
         };
@@ -272,9 +274,9 @@ public class EnquiryServiceImpl implements EnquiryService {
     private Page<Enquiry> pageFor(AuthenticatedUser caller, EnquiryStatus status, Pageable pageable) {
         Long callerId = caller.userId();
         return switch (caller.role()) {
-            case PARENT -> status == null
-                    ? enquiries.findByParentIdOrderByCreatedAtDesc(callerId, pageable)
-                    : enquiries.findByParentIdAndStatusOrderByCreatedAtDesc(callerId, status, pageable);
+            case PARENT, STUDENT -> status == null
+                    ? enquiries.findBySeekerIdOrderByCreatedAtDesc(callerId, pageable)
+                    : enquiries.findBySeekerIdAndStatusOrderByCreatedAtDesc(callerId, status, pageable);
             case TUTOR -> status == null
                     ? enquiries.findByTutorIdOrderByCreatedAtDesc(callerId, pageable)
                     : enquiries.findByTutorIdAndStatusOrderByCreatedAtDesc(callerId, status, pageable);
@@ -285,29 +287,29 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     /**
-     * The caller as an active parent.
+     * The caller as an active seeker — a parent or a student.
      *
      * <p>The status is re-checked rather than trusted from the token: access tokens live for
      * fifteen minutes, and an account suspended for spamming tutors must stop being able to
      * spam tutors now, not when its token happens to expire.
      */
-    private Parent requireActiveParent() {
+    private Seeker requireActiveSeeker() {
         Long callerId = currentUser.requireId();
-        Parent parent = users.findById(callerId)
-                .filter(Parent.class::isInstance)
-                .map(Parent.class::cast)
-                .orElseThrow(() -> new ResourceNotFoundException("Parent account", callerId));
-        if (parent.getStatus() != AccountStatus.ACTIVE) {
+        Seeker seeker = users.findById(callerId)
+                .filter(Seeker.class::isInstance)
+                .map(Seeker.class::cast)
+                .orElseThrow(() -> new ResourceNotFoundException("Seeker account", callerId));
+        if (seeker.getStatus() != AccountStatus.ACTIVE) {
             throw new BusinessRuleViolationException(ERROR_ACCOUNT_NOT_ACTIVE,
-                    "Account %s is %s and cannot send enquiries".formatted(callerId, parent.getStatus()));
+                    "Account %s is %s and cannot send enquiries".formatted(callerId, seeker.getStatus()));
         }
-        return parent;
+        return seeker;
     }
 
     /**
      * The tutor being asked, if they are actually on offer.
      *
-     * <p>A published profile is the condition, not merely an existing account: a parent can
+     * <p>A published profile is the condition, not merely an existing account: a seeker can
      * only have arrived here from a listing, and an enquiry to a tutor who has taken their
      * profile down would be a message nobody is expecting. The same "not found" covers a
      * suspended account, so the endpoint reveals nothing about why.
@@ -332,26 +334,35 @@ public class EnquiryServiceImpl implements EnquiryService {
      * already exists. The second is about the hour: an account working through a district one
      * tutor at a time is stopped regardless of how polite each individual message is.
      */
-    private void ensureWithinSendingLimits(Long parentId, Long tutorId) {
-        if (enquiries.existsByParentIdAndTutorIdAndStatusIn(parentId, tutorId, LIVE_STATUSES)) {
+    private void ensureWithinSendingLimits(Long seekerId, Long tutorId) {
+        if (enquiries.existsBySeekerIdAndTutorIdAndStatusIn(seekerId, tutorId, LIVE_STATUSES)) {
             throw new BusinessRuleViolationException(ERROR_ALREADY_OPEN,
-                    "Account %s already has an open enquiry with tutor %s".formatted(parentId, tutorId));
+                    "Account %s already has an open enquiry with tutor %s".formatted(seekerId, tutorId));
         }
         Instant since = clock.instant().minus(Duration.ofHours(1));
-        long recent = enquiries.countByParentIdAndCreatedAtAfter(parentId, since);
+        long recent = enquiries.countBySeekerIdAndCreatedAtAfter(seekerId, since);
         if (recent >= properties.maxPerHour()) {
-            log.warn("Account {} hit the enquiry rate limit with {} in the last hour", parentId, recent);
+            log.warn("Account {} hit the enquiry rate limit with {} in the last hour", seekerId, recent);
             throw new BusinessRuleViolationException(ERROR_RATE_LIMITED,
-                    "Account %s has sent %s enquiries in the last hour".formatted(parentId, recent));
+                    "Account %s has sent %s enquiries in the last hour".formatted(seekerId, recent));
         }
     }
 
-    /** Scoped to the parent, so another parent's child id is simply not found. */
-    private ChildProfile resolveChild(Long childProfileId, Long parentId) {
+    /**
+     * Scoped to the parent, so another parent's child id is simply not found.
+     *
+     * <p>A student naming a child is refused before the look-up (FR-A8): "not found" would
+     * suggest a child that might exist somewhere, when the truth is that a student has none.
+     */
+    private ChildProfile resolveChild(Long childProfileId, Seeker seeker) {
         if (childProfileId == null) {
             return null;
         }
-        return childProfiles.findByIdAndParentId(childProfileId, parentId)
+        if (!(seeker instanceof Parent)) {
+            throw new BusinessRuleViolationException(ERROR_CHILD_NOT_ALLOWED,
+                    "Account %s is not a parent account and cannot name a child profile".formatted(seeker.getId()));
+        }
+        return childProfiles.findByIdAndParentId(childProfileId, seeker.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Child profile", childProfileId));
     }
 
@@ -367,7 +378,7 @@ public class EnquiryServiceImpl implements EnquiryService {
                 .orElseThrow(() -> new ResourceNotFoundException("Exam level", code));
     }
 
-    /** Null when the parent asked for online classes; {@code Enquiry.open} enforces the pairing. */
+    /** Null when the seeker asked for online classes; {@code Enquiry.open} enforces the pairing. */
     private Area resolveArea(String code) {
         if (code == null || code.isBlank()) {
             return null;

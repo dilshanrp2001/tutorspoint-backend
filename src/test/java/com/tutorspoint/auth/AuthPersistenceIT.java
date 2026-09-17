@@ -7,6 +7,8 @@ import com.tutorspoint.auth.domain.EmailVerificationToken;
 import com.tutorspoint.auth.domain.Parent;
 import com.tutorspoint.auth.domain.PhoneOtp;
 import com.tutorspoint.auth.domain.Role;
+import com.tutorspoint.auth.domain.Seeker;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.ChildProfileRepository;
@@ -66,6 +68,28 @@ class AuthPersistenceIT extends AbstractIntegrationTest {
         assertThat(loaded.isEmailVerified()).isFalse();
         assertThat(loaded.getCreatedAt()).isNotNull();
         assertThat(loaded.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    void aStudentRoundTripsThroughTheSeekerLevel() {
+        Student saved = users.saveAndFlush(
+                new Student("ashan@example.lk", "$2a$10$hash", "Ashan Wijesinghe", "+94771111112", Language.EN));
+        Parent parent = users.saveAndFlush(
+                new Parent("niluka@example.lk", "$2a$10$hash", "Niluka Fernando", "+94771111113", Language.EN));
+        detach();
+
+        User loadedStudent = users.findById(saved.getId()).orElseThrow();
+        User loadedParent = users.findById(parent.getId()).orElseThrow();
+
+        // Both demand-side kinds are Seekers, and neither is mistaken for the other.
+        assertThat(loadedStudent).isInstanceOf(Student.class).isInstanceOf(Seeker.class);
+        assertThat(loadedStudent.getRole()).isEqualTo(Role.STUDENT);
+        assertThat(loadedParent).isInstanceOf(Parent.class).isInstanceOf(Seeker.class);
+        // One row per JOINED level: users, seekers, then the kind's own table.
+        assertThat(rowsIn("seekers", saved.getId())).isOne();
+        assertThat(rowsIn("students", saved.getId())).isOne();
+        assertThat(rowsIn("parents", saved.getId())).isZero();
+        assertThat(rowsIn("seekers", parent.getId())).isOne();
     }
 
     @Test
@@ -143,5 +167,12 @@ class AuthPersistenceIT extends AbstractIntegrationTest {
     private void detach() {
         entityManager.flush();
         entityManager.clear();
+    }
+
+    /** Rows for this id in one inheritance table — table names are fixed literals, never input. */
+    private long rowsIn(String table, Long id) {
+        return ((Number) entityManager.createNativeQuery("select count(*) from " + table + " where id = :id")
+                .setParameter("id", id)
+                .getSingleResult()).longValue();
     }
 }

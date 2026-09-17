@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * A parent's saved tutors (FR-P1).
+ * A seeker's saved tutors (FR-P1).
  *
  * <p>Addressed by tutor id rather than by an id of its own: a parent thinks "save this tutor",
  * not "create a shortlist entry", and a client that already has the tutor on screen has
@@ -31,7 +31,7 @@ import java.util.Locale;
 @RequestMapping("/api/shortlist")
 @RequiredArgsConstructor
 @SecurityRequirement(name = "bearerAuth")
-@Tag(name = "Shortlist", description = "Tutors a parent has saved to come back to")
+@Tag(name = "Shortlist", description = "Tutors a parent or student has saved to come back to")
 public class ShortlistController {
 
     private final ShortlistService shortlistService;

@@ -14,7 +14,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * A parent or adult student account — the demand side.
+ * A parent looking for a tutor for their children — one of the two kinds of {@link Seeker}.
+ * A learner acting for themselves registers as a {@link Student} instead.
  *
  * <p>A parent owns any number of {@link ChildProfile}s (FR-A5): one account, one login,
  * a sub-profile per child so enquiries carry the right grade and exam level. The children
@@ -24,7 +25,7 @@ import java.util.Set;
 @Entity
 @Table(name = "parents")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Parent extends User {
+public class Parent extends Seeker {
 
     private static final String ERROR_CHILD_NOT_OWNED = "CHILD_PROFILE_NOT_OWNED";
 

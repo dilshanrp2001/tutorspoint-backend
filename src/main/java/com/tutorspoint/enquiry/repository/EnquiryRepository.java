@@ -29,31 +29,31 @@ import java.util.Optional;
 public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
 
     /** One thread the caller is a participant in. Anybody else gets an empty result. */
-    @EntityGraph(attributePaths = {"parent", "tutor", "childProfile", "subject", "examLevel", "preferredArea"})
-    Optional<Enquiry> findByIdAndParentId(Long id, Long parentId);
+    @EntityGraph(attributePaths = {"seeker", "tutor", "childProfile", "subject", "examLevel", "preferredArea"})
+    Optional<Enquiry> findByIdAndSeekerId(Long id, Long seekerId);
 
-    @EntityGraph(attributePaths = {"parent", "tutor", "childProfile", "subject", "examLevel", "preferredArea"})
+    @EntityGraph(attributePaths = {"seeker", "tutor", "childProfile", "subject", "examLevel", "preferredArea"})
     Optional<Enquiry> findByIdAndTutorId(Long id, Long tutorId);
 
-    /** A parent's sent enquiries (FR-P2), newest first. */
-    @EntityGraph(attributePaths = {"parent", "tutor", "subject", "examLevel", "preferredArea"})
-    Page<Enquiry> findByParentIdOrderByCreatedAtDesc(Long parentId, Pageable pageable);
+    /** A seeker's sent enquiries (FR-P2), newest first. */
+    @EntityGraph(attributePaths = {"seeker", "tutor", "subject", "examLevel", "preferredArea"})
+    Page<Enquiry> findBySeekerIdOrderByCreatedAtDesc(Long seekerId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"parent", "tutor", "subject", "examLevel", "preferredArea"})
-    Page<Enquiry> findByParentIdAndStatusOrderByCreatedAtDesc(Long parentId, EnquiryStatus status, Pageable pageable);
+    @EntityGraph(attributePaths = {"seeker", "tutor", "subject", "examLevel", "preferredArea"})
+    Page<Enquiry> findBySeekerIdAndStatusOrderByCreatedAtDesc(Long seekerId, EnquiryStatus status, Pageable pageable);
 
     /** A tutor's received enquiries, newest first. */
-    @EntityGraph(attributePaths = {"parent", "tutor", "subject", "examLevel", "preferredArea"})
+    @EntityGraph(attributePaths = {"seeker", "tutor", "subject", "examLevel", "preferredArea"})
     Page<Enquiry> findByTutorIdOrderByCreatedAtDesc(Long tutorId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"parent", "tutor", "subject", "examLevel", "preferredArea"})
+    @EntityGraph(attributePaths = {"seeker", "tutor", "subject", "examLevel", "preferredArea"})
     Page<Enquiry> findByTutorIdAndStatusOrderByCreatedAtDesc(Long tutorId, EnquiryStatus status, Pageable pageable);
 
     /**
-     * How many enquiries this parent has opened since a moment — the hourly cap that stops
+     * How many enquiries this seeker has opened since a moment — the hourly cap that stops
      * one account spraying every tutor in a district (FR-E1).
      */
-    long countByParentIdAndCreatedAtAfter(Long parentId, Instant since);
+    long countBySeekerIdAndCreatedAtAfter(Long seekerId, Instant since);
 
     /**
      * Whether a live thread already exists between these two. A second enquiry to a tutor
@@ -61,7 +61,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
      * the existing thread. The partial unique index in V8 is the backstop for two requests
      * arriving at once; this is the readable error.
      */
-    boolean existsByParentIdAndTutorIdAndStatusIn(Long parentId, Long tutorId, Collection<EnquiryStatus> statuses);
+    boolean existsBySeekerIdAndTutorIdAndStatusIn(Long seekerId, Long tutorId, Collection<EnquiryStatus> statuses);
 
     /**
      * Enquiries sent in {@code [from, to)}, leaving out threads moderated as spam - the
@@ -88,7 +88,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
                         @Param("excluded") EnquiryStatus excluded);
 
     /**
-     * Messages waiting for this parent across every thread they have opened: what the header
+     * Messages waiting for this seeker across every thread they have opened: what the header
      * badge shows. Counted in the database rather than summed from an inbox page, because a
      * page is bounded and a reply on an old thread must still be noticed.
      *
@@ -96,9 +96,9 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
      */
     @Query("""
             select count(m) from EnquiryMessage m
-            where m.enquiry.parent.id = :parentId and m.sender.id <> :parentId and m.readAt is null
+            where m.enquiry.seeker.id = :seekerId and m.sender.id <> :seekerId and m.readAt is null
             """)
-    long countUnreadForParent(@Param("parentId") Long parentId);
+    long countUnreadForSeeker(@Param("seekerId") Long seekerId);
 
     /** The tutor's side of the same count. */
     @Query("""

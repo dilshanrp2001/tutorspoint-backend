@@ -76,7 +76,8 @@ public class AdminMetricsServiceImpl implements AdminMetricsService {
     private static Registrations registrations(List<RoleCount> counts) {
         long tutors = countFor(counts, Role.TUTOR);
         long parents = countFor(counts, Role.PARENT);
-        return new Registrations(tutors, parents, tutors + parents);
+        long students = countFor(counts, Role.STUDENT);
+        return new Registrations(tutors, parents, students, tutors + parents + students);
     }
 
     private static long countFor(List<RoleCount> counts, Role role) {

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tutorspoint.AbstractIntegrationTest;
 import com.tutorspoint.auth.domain.Admin;
 import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.UserRepository;
@@ -121,7 +122,8 @@ class EnquiryIT extends AbstractIntegrationTest {
      */
     @AfterEach
     void removeWhatWasCommitted() {
-        enquiries.deleteAll(enquiries.findByParentIdOrderByCreatedAtDesc(parentId, Pageable.unpaged()).getContent());
+        createdAccountIds.forEach(id ->
+                enquiries.deleteAll(enquiries.findBySeekerIdOrderByCreatedAtDesc(id, Pageable.unpaged()).getContent()));
         // The tutor's profile and photo row go with the account: V5 cascades from tutors.
         createdAccountIds.forEach(users::deleteById);
     }
@@ -277,7 +279,7 @@ class EnquiryIT extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/enquiries").header("Authorization", bearer(tutorToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.enquiries[0].parentId").value(parentId))
+                .andExpect(jsonPath("$.data.enquiries[0].seekerId").value(parentId))
                 // The tutor has not opened it, so the parent's opening message is unread.
                 .andExpect(jsonPath("$.data.enquiries[0].unreadCount").value(1));
 
@@ -361,8 +363,62 @@ class EnquiryIT extends AbstractIntegrationTest {
 
     @Test
     @DisplayName("a tutor cannot open an enquiry, whatever they post")
-    void onlyParentsMaySend() throws Exception {
+    void onlySeekersMaySend() throws Exception {
         enquire(tutorToken, "Hello").andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("a student enquires for themselves, sees it in their inbox, and is answered like a parent")
+    void aStudentIsAFullSeeker() throws Exception {
+        String suffix = String.valueOf(System.nanoTime());
+        Student student = activated(new Student("enq.student" + suffix + "@example.lk", hash(),
+                "Ashan Wijesinghe", phone(suffix, 5), Language.EN));
+        createdAccountIds.add(student.getId());
+        String studentToken = jwtService.issueAccessToken(student);
+
+        long enquiryId = idOf(enquire(studentToken, "Do you teach A/L Chemistry?")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.seekerId").value(student.getId()))
+                .andExpect(jsonPath("$.data.seekerName").value("Ashan Wijesinghe"))
+                .andExpect(jsonPath("$.data.child").doesNotExist()));
+
+        mockMvc.perform(get("/api/enquiries").header("Authorization", bearer(studentToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enquiries.length()").value(1))
+                .andExpect(jsonPath("$.data.enquiries[0].id").value(enquiryId));
+
+        reply(tutorToken, enquiryId, "Yes, on Saturdays.").andExpect(status().isCreated());
+        assertUnread(studentToken, 1);
+        mockMvc.perform(get("/api/enquiries/" + enquiryId).header("Authorization", bearer(studentToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contactRevealed").value(true))
+                .andExpect(jsonPath("$.data.contact.fullName").value("Kasun Perera"));
+    }
+
+    @Test
+    @DisplayName("a student naming a child is refused: a student has none (FR-A8)")
+    void aStudentCannotNameAChild() throws Exception {
+        String suffix = String.valueOf(System.nanoTime());
+        Student student = activated(new Student("enq.student" + suffix + "@example.lk", hash(),
+                "Ashan Wijesinghe", phone(suffix, 6), Language.EN));
+        createdAccountIds.add(student.getId());
+
+        mockMvc.perform(post("/api/enquiries")
+                        .header("Authorization", bearer(jwtService.issueAccessToken(student)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "tutorId": %d,
+                                  "childProfileId": 1,
+                                  "subjectCode": "CHEMISTRY",
+                                  "examLevelCode": "GCE_AL",
+                                  "preferredFormat": "ONLINE",
+                                  "online": true,
+                                  "message": "For my brother"
+                                }
+                                """.formatted(tutorId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CHILD_PROFILE_NOT_ALLOWED"));
     }
 
     @Test

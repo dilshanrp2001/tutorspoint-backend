@@ -12,7 +12,8 @@ import com.tutorspoint.auth.domain.Role;
 public enum RegistrableRole {
 
     TUTOR(Role.TUTOR),
-    PARENT(Role.PARENT);
+    PARENT(Role.PARENT),
+    STUDENT(Role.STUDENT);
 
     private final Role role;
 

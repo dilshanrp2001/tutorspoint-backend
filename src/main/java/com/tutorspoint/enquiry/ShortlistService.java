@@ -8,9 +8,9 @@ import com.tutorspoint.enquiry.dto.ShortlistResponse;
 import java.util.List;
 
 /**
- * The tutors a parent has saved to come back to (FR-P1).
+ * The tutors a seeker — a parent or a student — has saved to come back to (FR-P1).
  *
- * <p>Like {@code ChildProfileService}, no signature carries an owner: the parent is always the
+ * <p>Like {@code ChildProfileService}, no signature carries an owner: the seeker is always the
  * caller, and every entry is reached through a query that already filters by them.
  */
 public interface ShortlistService {

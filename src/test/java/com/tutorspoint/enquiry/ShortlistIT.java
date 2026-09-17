@@ -2,6 +2,7 @@ package com.tutorspoint.enquiry;
 
 import com.tutorspoint.AbstractIntegrationTest;
 import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.UserRepository;
@@ -144,8 +145,27 @@ class ShortlistIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("a student keeps a shortlist of their own, separate from any parent's")
+    void aStudentHasAShortlistToo() throws Exception {
+        Student student = activated(new Student("short.student@example.lk", hash(),
+                "Ashan Wijesinghe", "+94774000004", Language.EN));
+        String studentToken = jwtService.issueAccessToken(student);
+
+        save(studentToken, "Online, Saturdays").andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/shortlist").header("Authorization", bearer(studentToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].tutorId").value(tutorId))
+                .andExpect(jsonPath("$.data[0].note").value("Online, Saturdays"));
+        mockMvc.perform(get("/api/shortlist").header("Authorization", bearer(parentToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
     @DisplayName("a tutor has no shortlist, and a guest has no route to one")
-    void onlyParentsHaveAShortlist() throws Exception {
+    void onlySeekersHaveAShortlist() throws Exception {
         mockMvc.perform(get("/api/shortlist").header("Authorization", bearer(tutorToken)))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/shortlist"))

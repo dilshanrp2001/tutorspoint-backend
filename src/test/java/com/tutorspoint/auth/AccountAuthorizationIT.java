@@ -3,6 +3,7 @@ package com.tutorspoint.auth;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tutorspoint.AbstractIntegrationTest;
 import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.repository.UserRepository;
@@ -96,6 +97,28 @@ class AccountAuthorizationIT extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/account/children").header("Authorization", bearer(tutorToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName("a student has no child profiles to read or create (FR-A8)")
+    void studentsHaveNoChildren() throws Exception {
+        Student student = activated(new Student("auth.student@example.lk", hash(), "Ashan", "+94772000004", Language.EN));
+        String studentToken = jwtService.issueAccessToken(student);
+
+        mockMvc.perform(get("/api/account/children").header("Authorization", bearer(studentToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("ACCESS_DENIED"));
+        mockMvc.perform(post("/api/account/children")
+                        .header("Authorization", bearer(studentToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "Ashan", "grade": "Grade 12", "examLevel": "GCE A/L"}
+                                """))
+                .andExpect(status().isForbidden());
+        // Still a full account: the student reads their own details like anybody else.
+        mockMvc.perform(get("/api/account").header("Authorization", bearer(studentToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.role").value("STUDENT"));
     }
 
     @Test

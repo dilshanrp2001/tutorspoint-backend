@@ -10,5 +10,6 @@ public enum Role {
 
     TUTOR,
     PARENT,
+    STUDENT,
     ADMIN
 }

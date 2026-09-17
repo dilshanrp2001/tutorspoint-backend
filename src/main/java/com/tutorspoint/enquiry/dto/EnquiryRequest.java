@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * A parent opening a thread with a tutor (FR-E1).
+ * A seeker — a parent or a student — opening a thread with a tutor (FR-E1).
  *
  * <p>Reference values arrive as codes, not database ids: the code is the stable identifier,
  * it means the same thing in every environment, and a request body full of codes is readable
@@ -37,7 +37,7 @@ public record EnquiryRequest(
         @Size(max = EnquiryValidation.CODE_MAX_LENGTH, message = "{validation.enquiry.code.size}")
         String examLevelCode,
 
-        @Schema(description = "How the parent would like the classes taught")
+        @Schema(description = "How the seeker would like the classes taught")
         @NotNull(message = "{validation.enquiry.format.required}")
         ClassFormat preferredFormat,
 
@@ -46,7 +46,7 @@ public record EnquiryRequest(
         @Size(max = EnquiryValidation.CODE_MAX_LENGTH, message = "{validation.enquiry.code.size}")
         String preferredAreaCode,
 
-        @Schema(description = "True when the parent wants online classes. Then no area is given.")
+        @Schema(description = "True when the seeker wants online classes. Then no area is given.")
         boolean online,
 
         @Schema(description = "The first message of the thread. Phone numbers and email addresses "

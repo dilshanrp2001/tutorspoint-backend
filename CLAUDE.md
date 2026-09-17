@@ -35,7 +35,7 @@ There is no `controllers` package, no `services` package, no `dto` package at th
 ```
 com.tutorspoint
 ├── tutor          // tutor accounts, TutorProfile, publish/unpublish
-├── parent         // parent/student accounts, child sub-profiles, shortlists
+├── parent         // seeker accounts (Parent, Student), child sub-profiles, shortlists
 ├── search         // search criteria, filters, ranking strategies
 ├── enquiry        // on-platform enquiries + Request-a-Tutor
 ├── review         // ratings & reviews, verified-review rules

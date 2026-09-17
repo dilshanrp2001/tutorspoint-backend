@@ -9,7 +9,7 @@ import java.time.Instant;
 /**
  * One row of an inbox, for either role.
  *
- * <p>The same shape both ways round: a parent's sent list and a tutor's received list are the
+ * <p>The same shape both ways round: a seeker's sent list and a tutor's received list are the
  * same threads read from opposite ends, and giving each its own DTO would mean writing the
  * unread rule, the preview rule and the status rule twice.
  *
@@ -24,16 +24,17 @@ public record EnquirySummaryResponse(
         Long tutorId,
         String tutorName,
 
-        Long parentId,
-        String parentName,
+        @Schema(description = "The parent or student who opened the thread")
+        Long seekerId,
+        String seekerName,
 
         ReferenceItemResponse subject,
         ReferenceItemResponse examLevel,
 
-        @Schema(description = "How the parent asked for the classes to be taught")
+        @Schema(description = "How the seeker asked for the classes to be taught")
         ReferenceItemResponse preferredFormat,
 
-        @Schema(description = "Where the parent wants the classes. Null when online is true.")
+        @Schema(description = "Where the seeker wants the classes. Null when online is true.")
         ReferenceItemResponse preferredArea,
 
         boolean online,

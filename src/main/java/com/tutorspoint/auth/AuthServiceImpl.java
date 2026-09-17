@@ -4,6 +4,7 @@ import com.tutorspoint.auth.config.AuthProperties;
 import com.tutorspoint.auth.domain.AccountStatus;
 import com.tutorspoint.auth.domain.EmailVerificationToken;
 import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.PasswordResetToken;
 import com.tutorspoint.auth.domain.PhoneOtp;
 import com.tutorspoint.auth.domain.RefreshToken;
@@ -114,6 +115,8 @@ public class AuthServiceImpl implements AuthService {
             case TUTOR -> new Tutor(email, passwordHash, request.fullName(), phoneNumber,
                     request.preferredLanguage());
             case PARENT -> new Parent(email, passwordHash, request.fullName(), phoneNumber,
+                    request.preferredLanguage());
+            case STUDENT -> new Student(email, passwordHash, request.fullName(), phoneNumber,
                     request.preferredLanguage());
         };
         user = users.saveAndFlush(user);

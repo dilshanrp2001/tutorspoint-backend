@@ -19,7 +19,8 @@ import java.util.Locale;
 
 /**
  * A person with an account. Abstract: every real user is a {@link Tutor}, a
- * {@link Parent} or an {@link Admin}, and the subtype is fixed at registration.
+ * {@link Seeker} (a {@link Parent} or a {@link Student}) or an {@link Admin}, and the
+ * subtype is fixed at registration.
  *
  * <p>JOINED inheritance keeps the shared identity in one {@code users} row and each
  * subtype's own data in its own table, so the shared columns are declared, constrained

@@ -2,6 +2,7 @@ package com.tutorspoint.enquiry.domain;
 
 import com.tutorspoint.auth.domain.ChildProfile;
 import com.tutorspoint.auth.domain.Parent;
+import com.tutorspoint.auth.domain.Seeker;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.common.domain.BaseEntity;
@@ -33,8 +34,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * A parent asking a tutor about teaching their child, and the conversation that follows
- * (FR-E1 - FR-E3). The aggregate root of the enquiry package.
+ * A seeker asking a tutor about teaching them — a parent on behalf of a child, or a student
+ * for themselves — and the conversation that follows (FR-E1 - FR-E3). The aggregate root of the enquiry package.
  *
  * <p><strong>The reveal rule lives here.</strong> Contact details become visible when, and
  * only when, the tutor has replied — and "the tutor has replied" is not a flag a caller
@@ -48,7 +49,7 @@ import java.util.Optional;
  * column of its own. One body, one place, one scrub — see {@link EnquiryMessage}.
  *
  * <p>No setters. Each method below refuses what the domain forbids: a closed thread takes
- * no more messages, a parent replying does not move the thread to RESPONDED, and a thread
+ * no more messages, a seeker replying does not move the thread to RESPONDED, and a thread
  * marked spam is terminal.
  */
 @Entity
@@ -61,19 +62,20 @@ public class Enquiry extends BaseEntity {
     private static final String ERROR_THREAD_CLOSED = "ENQUIRY_CLOSED";
     private static final String ERROR_NOT_PARTICIPANT = "ENQUIRY_NOT_PARTICIPANT";
     private static final String ERROR_CHILD_NOT_OWNED = "CHILD_PROFILE_NOT_OWNED";
+    private static final String ERROR_CHILD_NOT_ALLOWED = "CHILD_PROFILE_NOT_ALLOWED";
     private static final String ERROR_PLACE_REQUIRED = "ENQUIRY_PLACE_REQUIRED";
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "parent_id", nullable = false, updatable = false)
-    private Parent parent;
+    @JoinColumn(name = "seeker_id", nullable = false, updatable = false)
+    private Seeker seeker;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_id", nullable = false, updatable = false)
     private Tutor tutor;
 
     /**
-     * Which child this is about (FR-A5). Optional: an adult student enquiring for themselves
-     * has no sub-profile, and a parent may have created none.
+     * Which child this is about (FR-A5). Optional: a student enquiring for themselves has no
+     * sub-profile to name, and a parent may have created none.
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "child_profile_id")
@@ -92,7 +94,7 @@ public class Enquiry extends BaseEntity {
     @Column(name = "preferred_format", nullable = false, length = 20)
     private ClassFormat preferredFormat;
 
-    /** Where the parent wants the classes. Null exactly when {@link #online} is true. */
+    /** Where the seeker wants the classes. Null exactly when {@link #online} is true. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "preferred_area_id")
     private Area preferredArea;
@@ -121,7 +123,7 @@ public class Enquiry extends BaseEntity {
     @OrderBy("createdAt ASC, id ASC")
     private List<EnquiryMessage> messages = new ArrayList<>();
 
-    private Enquiry(Parent parent,
+    private Enquiry(Seeker seeker,
                     Tutor tutor,
                     ChildProfile childProfile,
                     Subject subject,
@@ -129,7 +131,7 @@ public class Enquiry extends BaseEntity {
                     ClassFormat preferredFormat,
                     Area preferredArea,
                     boolean online) {
-        this.parent = required(parent, "parent");
+        this.seeker = required(seeker, "seeker");
         this.tutor = required(tutor, "tutor");
         this.childProfile = childProfile;
         this.subject = required(subject, "subject");
@@ -141,7 +143,7 @@ public class Enquiry extends BaseEntity {
     }
 
     /**
-     * Opens a thread with the parent's first message.
+     * Opens a thread with the seeker's first message.
      *
      * <p>A factory rather than a public constructor because an enquiry is never valid
      * half-built: it exists from the moment it has something to say, and the opening message
@@ -149,10 +151,11 @@ public class Enquiry extends BaseEntity {
      *
      * @param body the first message, already scrubbed of contact details by the caller —
      *             the entity stores what it is given and keeps no second copy
-     * @throws BusinessRuleViolationException if the child belongs to another parent, or the
-     *                                        request names neither an area nor online
+     * @throws BusinessRuleViolationException if a child is named by a student, or belongs to
+     *                                        another parent, or the request names neither an
+     *                                        area nor online
      */
-    public static Enquiry open(Parent parent,
+    public static Enquiry open(Seeker seeker,
                                Tutor tutor,
                                ChildProfile childProfile,
                                Subject subject,
@@ -161,7 +164,7 @@ public class Enquiry extends BaseEntity {
                                Area preferredArea,
                                boolean online,
                                String body) {
-        required(parent, "parent");
+        required(seeker, "seeker");
         // An area or online, exactly one. Checked here rather than in the service because
         // "online in Nugegoda" is not something this entity is ever allowed to represent, no
         // matter who asks.
@@ -171,14 +174,21 @@ public class Enquiry extends BaseEntity {
         }
         // The entity checks ownership itself rather than trusting the service to have done
         // it: a child's grade and school would otherwise leak into a stranger's thread.
-        if (childProfile != null && !childProfile.belongsTo(parent.getId())) {
+        if (childProfile != null && !(seeker instanceof Parent)) {
+            // Children are a Parent concern (FR-A8). A student asks about themselves, and a
+            // child id from one is a client bug, not an ownership question.
+            throw new BusinessRuleViolationException(ERROR_CHILD_NOT_ALLOWED,
+                    "Account %s is not a parent account and cannot name a child profile"
+                            .formatted(seeker.getId()));
+        }
+        if (childProfile != null && !childProfile.belongsTo(seeker.getId())) {
             throw new BusinessRuleViolationException(ERROR_CHILD_NOT_OWNED,
                     "Child profile %s does not belong to account %s"
-                            .formatted(childProfile.getId(), parent.getId()));
+                            .formatted(childProfile.getId(), seeker.getId()));
         }
-        Enquiry enquiry = new Enquiry(parent, tutor, childProfile, subject, examLevel,
+        Enquiry enquiry = new Enquiry(seeker, tutor, childProfile, subject, examLevel,
                 preferredFormat, preferredArea, online);
-        enquiry.messages.add(new EnquiryMessage(enquiry, parent, body));
+        enquiry.messages.add(new EnquiryMessage(enquiry, seeker, body));
         return enquiry;
     }
 
@@ -209,7 +219,7 @@ public class Enquiry extends BaseEntity {
 
     /**
      * The tutor has opened the thread (FR-E1). Only moves SENT to VIEWED: a thread that has
-     * already been answered does not go backwards, and a parent re-reading their own enquiry
+     * already been answered does not go backwards, and a seeker re-reading their own enquiry
      * is not the tutor viewing it.
      */
     public void markViewed() {
@@ -284,10 +294,10 @@ public class Enquiry extends BaseEntity {
 
     public boolean isParticipant(Long userId) {
         return userId != null
-                && (Objects.equals(parent.getId(), userId) || Objects.equals(tutor.getId(), userId));
+                && (Objects.equals(seeker.getId(), userId) || Objects.equals(tutor.getId(), userId));
     }
 
-    /** The first message of the thread — the enquiry itself, as the parent wrote it. */
+    /** The first message of the thread — the enquiry itself, as the seeker wrote it. */
     public Optional<EnquiryMessage> firstMessage() {
         return messages.isEmpty() ? Optional.empty() : Optional.of(messages.get(0));
     }
@@ -304,7 +314,7 @@ public class Enquiry extends BaseEntity {
      */
     public User counterpartOf(Long viewerId) {
         requireParticipant(viewerId);
-        return Objects.equals(parent.getId(), viewerId) ? tutor : parent;
+        return Objects.equals(seeker.getId(), viewerId) ? tutor : seeker;
     }
 
     private boolean isTutor(User user) {

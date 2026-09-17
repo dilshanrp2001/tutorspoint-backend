@@ -3,7 +3,7 @@ package com.tutorspoint.enquiry.event;
 import com.tutorspoint.common.domain.Language;
 
 /**
- * A parent has opened a thread with a tutor, and the row is committed.
+ * A seeker — a parent or a student — has opened a thread with a tutor, and the row is committed.
  *
  * <p>Published by the enquiry service through {@code ApplicationEventPublisher}, which is the
  * whole point: the service knows an enquiry was created and nothing else. It does not know
@@ -19,20 +19,20 @@ import com.tutorspoint.common.domain.Language;
  * re-read a user row to find an email address.
  *
  * @param enquiryId     the thread, for the deep link the tutor follows
- * @param parentId      who asked, for the analytics counters
- * @param parentName    how the tutor sees them — a name, never a contact detail
+ * @param seekerId      who asked, for the analytics counters
+ * @param seekerName    how the tutor sees them — a name, never a contact detail
  * @param tutorId       who was asked
  * @param tutorEmail    where the notification goes. A notification is not a reveal: the
  *                      platform may write to a tutor at any time, and this address never
- *                      reaches the parent.
+ *                      reaches the seeker.
  * @param tutorName     for the greeting
  * @param tutorLanguage the language the tutor reads
  * @param subjectName   what the enquiry is about, already rendered in {@code tutorLanguage}
  */
 public record EnquiryCreatedEvent(
         Long enquiryId,
-        Long parentId,
-        String parentName,
+        Long seekerId,
+        String seekerName,
         Long tutorId,
         String tutorEmail,
         String tutorName,

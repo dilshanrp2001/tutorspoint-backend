@@ -58,8 +58,8 @@ public interface EnquiryMapper {
     @Mapping(target = "id", source = "enquiry.id")
     @Mapping(target = "tutorId", source = "enquiry.tutor.id")
     @Mapping(target = "tutorName", source = "enquiry.tutor.fullName")
-    @Mapping(target = "parentId", source = "enquiry.parent.id")
-    @Mapping(target = "parentName", source = "enquiry.parent.fullName")
+    @Mapping(target = "seekerId", source = "enquiry.seeker.id")
+    @Mapping(target = "seekerName", source = "enquiry.seeker.fullName")
     @Mapping(target = "subject", source = "enquiry.subject")
     @Mapping(target = "examLevel", source = "enquiry.examLevel")
     @Mapping(target = "preferredFormat",
@@ -86,8 +86,8 @@ public interface EnquiryMapper {
     @Mapping(target = "id", source = "enquiry.id")
     @Mapping(target = "tutorId", source = "enquiry.tutor.id")
     @Mapping(target = "tutorName", source = "enquiry.tutor.fullName")
-    @Mapping(target = "parentId", source = "enquiry.parent.id")
-    @Mapping(target = "parentName", source = "enquiry.parent.fullName")
+    @Mapping(target = "seekerId", source = "enquiry.seeker.id")
+    @Mapping(target = "seekerName", source = "enquiry.seeker.fullName")
     @Mapping(target = "child", source = "enquiry.childProfile")
     @Mapping(target = "subject", source = "enquiry.subject")
     @Mapping(target = "examLevel", source = "enquiry.examLevel")
@@ -126,7 +126,7 @@ public interface EnquiryMapper {
      * A saved tutor and their public card.
      *
      * @param profile the tutor's published profile, or null if they have taken it down — the
-     *                entry still comes back, so the parent can see what became of a tutor they
+     *                entry still comes back, so the seeker can see what became of a tutor they
      *                saved
      */
     @Mapping(target = "id", source = "shortlist.id")

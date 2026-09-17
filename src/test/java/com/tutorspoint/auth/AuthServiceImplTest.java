@@ -8,6 +8,7 @@ import com.tutorspoint.auth.domain.PasswordResetToken;
 import com.tutorspoint.auth.domain.PhoneOtp;
 import com.tutorspoint.auth.domain.RefreshToken;
 import com.tutorspoint.auth.domain.Role;
+import com.tutorspoint.auth.domain.Student;
 import com.tutorspoint.auth.domain.Tutor;
 import com.tutorspoint.auth.domain.User;
 import com.tutorspoint.auth.dto.ForgotPasswordRequest;
@@ -164,6 +165,20 @@ class AuthServiceImplTest {
             then(users).should().saveAndFlush(saved.capture());
             assertThat(saved.getValue()).isInstanceOf(Parent.class);
             assertThat(saved.getValue().getRole()).isEqualTo(Role.PARENT);
+        }
+
+        @Test
+        void createsAStudentForTheStudentRole() {
+            givenNothingIsTaken();
+            givenPasswordsAreHashed();
+            given(users.saveAndFlush(any(User.class))).willAnswer(call -> withId(call.getArgument(0, User.class), 9L));
+
+            service.register(registerAs(RegistrableRole.STUDENT));
+
+            ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+            then(users).should().saveAndFlush(saved.capture());
+            assertThat(saved.getValue()).isInstanceOf(Student.class);
+            assertThat(saved.getValue().getRole()).isEqualTo(Role.STUDENT);
         }
 
         @Test

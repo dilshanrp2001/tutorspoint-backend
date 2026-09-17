@@ -39,7 +39,7 @@ public class EnquiryAnalyticsListener {
         // and read zero from startup. A metric that only appears once something has happened
         // cannot be told apart from a metric that is broken.
         this.sent = Counter.builder(SENT_COUNTER)
-                .description("Enquiries opened by parents (FR-E1)")
+                .description("Enquiries opened by parents and students (FR-E1)")
                 .register(meters);
         this.responded = Counter.builder(RESPONDED_COUNTER)
                 .description("Enquiries answered by the tutor, counted on the first reply only (OBJ-6)")
