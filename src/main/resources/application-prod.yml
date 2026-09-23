@@ -55,6 +55,14 @@ tutorspoint:
       # accept every upload and lose all of them on the next deployment.
       root: ${STORAGE_ROOT}
 
+server:
+  # The API sits behind nginx (deploy/), which overwrites X-Forwarded-For with the address it
+  # accepted the connection from and sets X-Forwarded-Proto. Tomcat takes them only from an
+  # internal address - the Docker network - so getRemoteAddr() is the visitor, not the proxy.
+  # Without this every visitor shares one rate-limit bucket (RateLimitFilter), the audit log
+  # records the proxy's address, and no response is known to be HTTPS, so HSTS is never sent.
+  forward-headers-strategy: native
+
 # Swagger is not exposed in production.
 springdoc:
   api-docs:

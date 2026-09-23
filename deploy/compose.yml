@@ -1,0 +1,168 @@
+# Production stack for one VPS. See DEPLOYMENT.md at the repository root.
+#
+#   internet :80/:443 -> nginx (frontend image: static bundle + TLS + /api proxy)
+#                          -> backend:8080 (never published) -> postgres:5432 (never published)
+#   certbot renews the certificate; backup dumps nightly to off-server storage.
+#
+# Every value comes from deploy/.env on the server (template: .env.example). `${VAR:?}` makes
+# `docker compose` refuse to start at all when a required one is missing, instead of passing
+# an empty string through to a service that would then fail in a less obvious way.
+
+name: tutorspoint
+
+x-backup-env: &backup-env
+  PGHOST: postgres
+  PGDATABASE: ${DB_NAME:?}
+  PGUSER: ${DB_USERNAME:?}
+  PGPASSWORD: ${DB_PASSWORD:?}
+  # The superuser, for restores only: dropping and recreating the database needs it.
+  POSTGRES_SUPERUSER: ${POSTGRES_USER:?}
+  POSTGRES_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD:?}
+  BACKUP_REMOTE: ${BACKUP_REMOTE:?}
+  BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?}
+  BACKUP_TIME_UTC: ${BACKUP_TIME_UTC:-20:30}
+  BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+  BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
+  # rclone reads a remote named "offsite" from these; any S3-compatible store works.
+  RCLONE_CONFIG_OFFSITE_TYPE: s3
+  RCLONE_CONFIG_OFFSITE_PROVIDER: ${BACKUP_S3_PROVIDER:?}
+  RCLONE_CONFIG_OFFSITE_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+  RCLONE_CONFIG_OFFSITE_REGION: ${BACKUP_S3_REGION:-}
+  RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?}
+  RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?}
+  RCLONE_CONFIG_OFFSITE_NO_CHECK_BUCKET: "true"
+
+services:
+  postgres:
+    # The Debian image, like dev and the tests: Alpine's musl sorts text differently, and the
+    # indexes are built with the collation of whatever image created the cluster.
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      # Read by postgres/init: the application's own role and database, created once.
+      APP_DB_NAME: ${DB_NAME:?}
+      APP_DB_USER: ${DB_USERNAME:?}
+      APP_DB_PASSWORD: ${DB_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    shm_size: 256m
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/dilshanrp2001/tutorspoint-backend}:${BACKEND_TAG:?}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:?}
+      DB_USERNAME: ${DB_USERNAME:?}
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      MAIL_HOST: ${MAIL_HOST:?}
+      MAIL_PORT: ${MAIL_PORT:?}
+      MAIL_USERNAME: ${MAIL_USERNAME:?}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?}
+      MAIL_FROM: ${MAIL_FROM:?}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:?}
+      PHONE_VERIFICATION_ENABLED: ${PHONE_VERIFICATION_ENABLED:-false}
+      OTP_DELIVERY: ${OTP_DELIVERY:-EMAIL}
+      SMS_NOTIFY_LK_BASE_URL: ${SMS_NOTIFY_LK_BASE_URL:?}
+      SMS_NOTIFY_LK_USER_ID: ${SMS_NOTIFY_LK_USER_ID:?}
+      SMS_NOTIFY_LK_API_KEY: ${SMS_NOTIFY_LK_API_KEY:?}
+      SMS_NOTIFY_LK_SENDER_ID: ${SMS_NOTIFY_LK_SENDER_ID:?}
+      FRONTEND_BASE_URL: https://${DOMAIN:?}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      ADMIN_BOOTSTRAP_FULL_NAME: ${ADMIN_BOOTSTRAP_FULL_NAME:-TutorsPoint Admin}
+      ADMIN_BOOTSTRAP_PHONE: ${ADMIN_BOOTSTRAP_PHONE:-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true}
+    volumes:
+      # Uploaded documents, photos and videos. The image sets STORAGE_ROOT to this path.
+      - uploads:/var/lib/tutorspoint/uploads
+    # The healthcheck is in the image (Dockerfile HEALTHCHECK, /actuator/health).
+    logging: &logging
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  nginx:
+    image: ${FRONTEND_IMAGE:-ghcr.io/dilshanrp2001/tutorspoint-frontend}:${FRONTEND_TAG:?}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Substituted into nginx/templates/*.template by the nginx image's entrypoint.
+      DOMAIN: ${DOMAIN:?}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    # Reload every 6 hours so a certificate certbot renewed is picked up without a restart.
+    command: >-
+      /bin/sh -c 'while :; do sleep 6h & wait $$!; nginx -s reload; done &
+      exec /docker-entrypoint.sh nginx -g "daemon off;"'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+  certbot:
+    image: certbot/certbot:v5.8.0
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    # Twice a day, as Let's Encrypt asks; renew is a no-op until 30 days before expiry. The
+    # first certificate is issued by deploy/issue-certificate.sh, before nginx can start.
+    entrypoint: >-
+      /bin/sh -c 'trap exit TERM; while :; do
+      certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $$!; done'
+    logging: *logging
+
+  backup:
+    build: ./backup
+    image: tutorspoint-backup:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *backup-env
+    volumes:
+      - uploads:/uploads:ro
+    command: ["schedule"]
+    logging: *logging
+
+  # One-off restores and restore drills (DEPLOYMENT.md, "Restore"). Never started by `up`:
+  #   docker compose --profile tools run --rm -v /root/tutorspoint-backup.key:/run/secrets/age-identity:ro restore ...
+  restore:
+    profiles: ["tools"]
+    build: ./backup
+    image: tutorspoint-backup:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *backup-env
+    volumes:
+      - uploads:/uploads
+
+volumes:
+  # Not "pgdata": the dev docker-compose.yml names its volume tutorspoint_pgdata, which is
+  # what this would become under the project name above on a developer's machine.
+  postgres-data:
+  uploads:
+  letsencrypt:
+  certbot-webroot:
