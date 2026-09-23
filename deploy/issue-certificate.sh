@@ -31,6 +31,6 @@ fi
 
 docker compose run --rm -p 80:80 --entrypoint certbot certbot \
     certonly --standalone --non-interactive --agree-tos \
-    --email "$LETSENCRYPT_EMAIL" -d "$DOMAIN" "${extra[@]}"
+    --email "$LETSENCRYPT_EMAIL" --cert-name "$DOMAIN" -d "$DOMAIN" -d "www.$DOMAIN" "${extra[@]}"
 
-echo "Certificate issued for $DOMAIN. Continue with DEPLOYMENT.md, first deploy step 7."
+echo "Certificate issued for $DOMAIN and www.$DOMAIN. Continue with DEPLOYMENT.md, first deploy step 7."

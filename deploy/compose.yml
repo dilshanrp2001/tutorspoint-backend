@@ -2,7 +2,7 @@
 #
 #   internet :80/:443 -> nginx (frontend image: static bundle + TLS + /api proxy)
 #                          -> backend:8080 (never published) -> postgres:5432 (never published)
-#   certbot renews the certificate; backup dumps nightly to off-server storage.
+#   certbot renews the certificate; backup (opt-in) dumps nightly to off-server storage.
 #
 # Every value comes from deploy/.env on the server (template: .env.example). `${VAR:?}` makes
 # `docker compose` refuse to start at all when a required one is missing, instead of passing
@@ -18,18 +18,20 @@ x-backup-env: &backup-env
   # The superuser, for restores only: dropping and recreating the database needs it.
   POSTGRES_SUPERUSER: ${POSTGRES_USER:?}
   POSTGRES_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD:?}
-  BACKUP_REMOTE: ${BACKUP_REMOTE:?}
-  BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?}
+  # Backups are opt-in (COMPOSE_PROFILES=backup in .env), so the off-server settings are not
+  # required here: tp-backup refuses to run when one it needs is empty.
+  BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+  BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
   BACKUP_TIME_UTC: ${BACKUP_TIME_UTC:-20:30}
   BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
   BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
   # rclone reads a remote named "offsite" from these; any S3-compatible store works.
   RCLONE_CONFIG_OFFSITE_TYPE: s3
-  RCLONE_CONFIG_OFFSITE_PROVIDER: ${BACKUP_S3_PROVIDER:?}
+  RCLONE_CONFIG_OFFSITE_PROVIDER: ${BACKUP_S3_PROVIDER:-}
   RCLONE_CONFIG_OFFSITE_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
   RCLONE_CONFIG_OFFSITE_REGION: ${BACKUP_S3_REGION:-}
-  RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?}
-  RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?}
+  RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+  RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
   RCLONE_CONFIG_OFFSITE_NO_CHECK_BUCKET: "true"
 
 services:
@@ -133,7 +135,9 @@ services:
       certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $$!; done'
     logging: *logging
 
+  # Off until .env sets COMPOSE_PROFILES=backup and the BACKUP_* values (DEPLOYMENT.md, "Backups").
   backup:
+    profiles: ["backup"]
     build: ./backup
     image: tutorspoint-backup:local
     restart: unless-stopped

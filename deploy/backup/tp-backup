@@ -26,6 +26,13 @@ UPLOADS_OWNER=10001:10001
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
+# compose.yml passes these as empty strings while backups are off, so `set -u` cannot catch them.
+for var in BACKUP_REMOTE BACKUP_AGE_RECIPIENT \
+           RCLONE_CONFIG_OFFSITE_PROVIDER RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID \
+           RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY; do
+    [[ -n "${!var:-}" ]] || die "$var is empty: fill in the BACKUP_* values in .env (DEPLOYMENT.md, \"Backups\")"
+done
+
 # psql as the superuser, against the maintenance database: creating, renaming and dropping a
 # database cannot be done from inside it, and the application role may not create one.
 as_superuser() {

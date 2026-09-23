@@ -5,7 +5,8 @@
 #   ./deploy.sh --no-backup <backend-tag> <frontend-tag>
 #
 # 1. pulls both images first, so a mistyped tag fails before anything has changed;
-# 2. takes a `predeploy` backup - the way back if this release's migrations must be undone;
+# 2. takes a `predeploy` backup, when backups are on - the way back if this release's
+#    migrations must be undone;
 # 3. writes the tags to .env and appends the change to releases.log;
 # 4. recreates the containers and waits for the backend's healthcheck (Flyway has run, and
 #    Hibernate has validated the schema, by the time it reports healthy).
@@ -15,6 +16,12 @@ cd "$(dirname "$0")"
 . ./env-value.sh
 
 backup=1
+# Backups are opt-in (compose.yml): without the backup profile there is nothing to take one with.
+if [[ ",$(env_value COMPOSE_PROFILES)," != *,backup,* ]]; then
+    backup=0
+    printf 'Backups are off (no COMPOSE_PROFILES=backup in .env): no predeploy backup. A release\n' >&2
+    printf 'whose migration goes wrong can only be rolled forward - DEPLOYMENT.md, "Rollback".\n' >&2
+fi
 if [[ "${1:-}" == "--no-backup" ]]; then
     backup=0
     shift

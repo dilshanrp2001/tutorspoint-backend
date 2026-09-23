@@ -86,7 +86,7 @@ and it is not in any backup.
 | `DB_NAME`           | yes | `tutorspoint` | the application database |
 | `DB_USERNAME`       | yes | `tutorspoint` | the application's role, which owns `DB_NAME` |
 | `DB_PASSWORD`       | yes | `openssl rand -base64 24` | backend, backup |
-| `DB_POOL_SIZE`      | no  | default `10` | backend Hikari pool |
+| `DB_POOL_SIZE`      | no  | default `10`; `5` on a 2 GB server | backend Hikari pool |
 
 The postgres init script reads these **only when the data volume is empty**. Changing them later
 does not change the database: rotate a password with `ALTER ROLE` first, then update `.env`.
@@ -112,7 +112,7 @@ does not change the database: rotate a password with `ALTER ROLE` first, then up
 | `ADMIN_BOOTSTRAP_PASSWORD`    | first deploy | 12+ characters, from the password manager | |
 | `ADMIN_BOOTSTRAP_FULL_NAME`   | no  | `TutorsPoint Admin` | |
 | `ADMIN_BOOTSTRAP_PHONE`       | first deploy | E.164, e.g. `+9477…`, not used by any account | |
-| `JAVA_TOOL_OPTIONS`           | no  | default `-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true` | JVM flags |
+| `JAVA_TOOL_OPTIONS`           | no  | default `-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true` | JVM flags. On a 2 GB server cap the heap instead: `-Xmx640m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true` |
 
 Set by `compose.yml` or the image, never in `.env`: `SPRING_PROFILES_ACTIVE=prod`,
 `DB_URL` (built from `DB_NAME`), `FRONTEND_BASE_URL` (built from `DOMAIN`),
@@ -120,8 +120,12 @@ Set by `compose.yml` or the image, never in `.env`: `SPRING_PROFILES_ACTIVE=prod
 
 ### Backups
 
+Only while backups are on (`COMPOSE_PROFILES=backup`, see [Backups](#backups)). "yes" below
+means "yes, when backups are on": `tp-backup` refuses to run with any of them empty.
+
 | Variable                      | Required | Example / how to generate | Notes |
 | ----------------------------- | -------- | ------------------------- | ----- |
+| `COMPOSE_PROFILES`            | yes | `backup` | Turns backups on: starts the nightly `backup` service, and makes `deploy.sh` take a `predeploy` backup. |
 | `BACKUP_REMOTE`               | yes | `offsite:tutorspoint-backups/production` | `offsite:` + bucket + path. **Create the bucket in the provider's console first.** The key is deliberately not allowed to create buckets, so a backup to a missing bucket fails with `NoSuchBucket`. |
 | `BACKUP_S3_PROVIDER`          | yes | `Cloudflare`, `AWS`, `Backblaze`, `Wasabi`, `Minio`, … | rclone's S3 provider name |
 | `BACKUP_S3_ENDPOINT`          | depends | `https://<account>.r2.cloudflarestorage.com` | empty for AWS |
@@ -135,9 +139,52 @@ Set by `compose.yml` or the image, never in `.env`: `SPRING_PROFILES_ACTIVE=prod
 
 ## First deploy
 
-**Prerequisites:** a VPS (2 vCPU / 4 GB is comfortable) running Ubuntu 24.04 with Docker Engine
-and the Compose plugin; a DNS `A` (and `AAAA`, if IPv6) record for `DOMAIN` pointing at it;
-ports 80 and 443 open to the internet; the bucket created at the storage provider.
+**Prerequisites:** a VPS (2 vCPU / 4 GB is comfortable; 2 GB works with the settings in
+[Server: AWS EC2](#server-aws-ec2)) running Ubuntu 24.04 with Docker Engine and the Compose
+plugin; a DNS `A` (and `AAAA`, if IPv6) record for `DOMAIN` pointing at it, and
+`CNAME www → DOMAIN` (the certificate covers both, and nginx redirects `www` to the bare
+domain); ports 80 and 443 open to the internet; the sending domain verified at the mail provider
+([Email DNS](#email-dns)); if backups are on, the bucket created at the storage provider.
+
+### Server: AWS EC2
+
+The pilot runs on AWS's Free plan: new accounts get credits that last 6 months, or until they
+run out. **Before that date, upgrade the account to paid or move the server** (see
+[Restoring onto a new server](#restoring-onto-a-new-server)). A Free-plan account that is not
+upgraded is closed, and the server's disk with it. **Backups are off by default**, so before
+moving, take one by hand (`pg_dump` plus a tar of the `uploads` volume), or turn
+[Backups](#backups) on a few days before.
+
+- **Instance:** `t3.small` (2 vCPU / 2 GB, about $16/month in credits) in `ap-south-1` (Mumbai),
+  Ubuntu 24.04 LTS x86_64, 30 GB gp3. The CI images are amd64 only, so don't pick a Graviton
+  (`t4g`) type.
+- **Security group:** 22 from your own IP only; 80 and 443 from `0.0.0.0/0` and `::/0`.
+- **Elastic IP:** allocate one and associate it, so the address in DNS survives a stop and start.
+- **Budget:** AWS Budgets → a $5 cost budget with email alerts, to catch anything that is not
+  covered by credits.
+- **2 GB of RAM** needs swap, and an explicit heap cap in `.env` (both lines are in
+  `.env.example`: `JAVA_TOOL_OPTIONS=-Xmx640m …` and `DB_POOL_SIZE=5`):
+  ```bash
+  sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile
+  sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+  ```
+- **Too small?** If `free -m` shows swap in steady use, or the backend restarts with
+  `OutOfMemoryError`: stop the instance, change its type to `c7i-flex.large` (4 GB), start
+  it. The volume and the Elastic IP stay, so nothing else changes. Then remove the two 2 GB
+  lines from `.env` and run `docker compose up -d backend`.
+
+### Email DNS
+
+Add the domain at Resend. Then copy the records it shows into the DNS provider (Spaceship:
+Domain Manager → the domain → Advanced DNS): the DKIM `TXT` at `resend._domainkey`, and the
+SPF `MX` and `TXT` at `send`. Also add `_dmarc TXT "v=DMARC1; p=none;"`. Once Resend shows the
+domain as verified, create an API key with sending access: that key is `MAIL_PASSWORD`. Mail
+from an unverified domain is refused, or lands in spam.
+
+Spaceship adds parking records to a new domain. **Delete them** before adding the `A` and `www`
+records, or some visitors will be sent to the parking page.
+
+### Steps
 
 1. **Clone the deployment files** (as a non-root deploy user in the `docker` group):
    ```bash
@@ -147,7 +194,8 @@ ports 80 and 443 open to the internet; the bucket created at the storage provide
    ```
    Only `deploy/` is used on the server. The application arrives as images.
 
-2. <a id="backup-key"></a>**Create the backup key, on your own machine, not the server:**
+2. <a id="backup-key"></a>**Only if backups are on — create the backup key, on your own
+   machine, not the server:**
    ```bash
    age-keygen -o tutorspoint-backup.key     # prints "Public key: age1..."
    ```
@@ -191,14 +239,15 @@ ports 80 and 443 open to the internet; the bucket created at the storage provide
 8. **Sign in as the bootstrap admin** at `https://$DOMAIN/login`. Then remove the four
    `ADMIN_BOOTSTRAP_*` lines from `.env` and run `docker compose up -d backend`.
 
-9. **Prove the backups work before anyone uses the site:**
+9. **Only if backups are on — prove they work before anyone uses the site:**
    ```bash
    docker compose run --rm backup backup manual     # must end with "done"
    ```
    Then run a [restore drill](#restore-drill) and add a row to the [drill log](#restore-drill-log).
 
 10. **Check from outside:** `https://$DOMAIN` loads over a valid certificate, `http://` redirects
-    to it, and https://www.ssllabs.com/ssltest/ grades it A or better. Then run the end-to-end
+    to it, `https://www.$DOMAIN` redirects to the bare domain, and
+    https://www.ssllabs.com/ssltest/ grades it A or better. Then run the end-to-end
     smoke test from the development plan (register a tutor, verify, publish, search, enquire,
     reply).
 
@@ -244,7 +293,8 @@ deliberate: the old code was never tested against the new schema. Pick one:
 1. **Roll forward (preferred).** Fix the bug in a new commit. If the migration itself was wrong,
    add a new migration that corrects it. Migrations are never edited or deleted. Then release as
    usual.
-2. **Restore the `predeploy` backup** that `deploy.sh` took just before the bad release. **This
+2. **Restore the `predeploy` backup** that `deploy.sh` took just before the bad release (only
+   exists while backups are on; otherwise option 1 is the only one). **This
    loses every write made since that release.** Weigh that against option 1.
    ```bash
    docker compose run --rm backup list | grep predeploy | tail -n 3    # pick the one just before the release
@@ -257,7 +307,15 @@ A frontend-only rollback never involves the database.
 
 ## Backups
 
-The `backup` service runs [`tp-backup`](deploy/backup/tp-backup) every day at `BACKUP_TIME_UTC`.
+**Backups are off by default.** Without them, a lost disk, a closed cloud account or a bad
+migration loses the data (accounts, profiles, uploaded documents) for good. To turn them on:
+
+1. Create the bucket and a key scoped to it, and the [backup key](#backup-key).
+2. In `.env`, uncomment the backup block from `.env.example` and fill it in, including
+   `COMPOSE_PROFILES=backup`.
+3. Run `docker compose up -d`, which starts the `backup` service. Then do First deploy step 9.
+
+When they are on, the `backup` service runs [`tp-backup`](deploy/backup/tp-backup) every day at `BACKUP_TIME_UTC`.
 Each run:
 
 1. `pg_dump --format=custom` of `DB_NAME`, then `pg_restore --list` on the result to prove it is
