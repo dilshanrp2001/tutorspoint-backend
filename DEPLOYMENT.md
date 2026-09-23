@@ -1,60 +1,63 @@
 # Deploying TutorsPoint
 
 How TutorsPoint runs in production, how to deploy it for the first time, and how to release,
-roll back and restore. Everything described here lives in [`deploy/`](deploy/).
+roll back and recover. Everything described here lives in [`deploy/`](deploy/).
 
 - [How it fits together](#how-it-fits-together)
 - [Environment variables](#environment-variables)
 - [First deploy](#first-deploy)
 - [Releasing](#releasing)
 - [Rollback](#rollback)
-- [Backups](#backups)
-- [Restore](#restore)
-- [Restore drill log](#restore-drill-log)
+- [Data and recovery](#data-and-recovery)
+- [Moving to another server](#moving-to-another-server)
 - [Routine operations](#routine-operations)
 
 ## How it fits together
 
-One VPS running Docker Compose ([`deploy/compose.yml`](deploy/compose.yml)):
+One VPS running Docker Compose ([`deploy/compose.yml`](deploy/compose.yml)), and a hosted
+PostgreSQL database on [Neon](https://neon.com):
 
 ```
-internet ──:80/:443──▶ nginx ──/api/*──▶ backend:8080 ──▶ postgres:5432
+internet ──:80/:443──▶ nginx ──/api/*──▶ backend:8080 ──TLS──▶ Neon PostgreSQL 16 (Singapore)
                         │                   │
-                        └─ static bundle    └─ uploads volume
+                        └─ static bundle    └─ uploads volume (server disk)
 certbot  ── renews the TLS certificate through nginx's /.well-known/acme-challenge/
-backup   ── nightly: pg_dump + uploads ─▶ encrypted (age) ─▶ S3-compatible storage off-server
 ```
 
-| Service    | Image                                            | Published ports |
-| ---------- | ------------------------------------------------ | --------------- |
+| Service    | Image                                              | Published ports |
+| ---------- | -------------------------------------------------- | --------------- |
 | `nginx`    | `ghcr.io/dilshanrp2001/tutorspoint-frontend:<tag>` | 80, 443         |
 | `backend`  | `ghcr.io/dilshanrp2001/tutorspoint-backend:<tag>`  | none            |
-| `postgres` | `postgres:16`                                    | none            |
-| `certbot`  | `certbot/certbot:v5.8.0`                         | none            |
-| `backup`   | built on the server from `deploy/backup`         | none            |
+| `certbot`  | `certbot/certbot:v5.8.0`                           | none            |
 
 - **Images.** CI builds both images on every push and publishes them to GHCR on every push to
   `main`, tagged `sha-<7-char commit>` and `latest`. The server always runs a pinned `sha-` tag
   (`BACKEND_TAG` / `FRONTEND_TAG` in `deploy/.env`), never `latest`, so a rollback is a matter of
-  naming the previous tag.
+  naming the previous tag. The images are amd64 only.
 - **Frontend image.** nginx carrying the built bundle. It owns how the bundle is served (cache
   rules, the page's Content-Security-Policy) in `tutorspoint-frontend/nginx/`. The deployment
   mounts [`deploy/nginx/templates/default.conf.template`](deploy/nginx/templates/default.conf.template)
-  over the image's default server block to add TLS and the `/api` proxy. The bundle calls
-  `/api` on its own origin, so there is no CORS in production.
+  over the image's default server block to add TLS, the `/api` proxy and the `www` → bare-domain
+  redirect. The bundle calls `/api` on its own origin, so there is no CORS in production.
 - **Backend image.** JRE 21 on Alpine, running as uid 10001, with a `HEALTHCHECK` on
   `/actuator/health`. Only `/api/` is proxied; the actuator is not reachable from outside.
+- **Database.** Neon, over TLS, on the **direct** (not pooled) endpoint: Flyway migrates over
+  the application's own connection at startup, and Neon's pooler (PgBouncer in transaction
+  mode) breaks the session-level lock Flyway takes. The backend connects as `DB_USERNAME`, which
+  owns the database and nothing else.
+- **Scale to zero.** Neon's free compute sleeps after 5 minutes without queries, and its monthly
+  compute hours do not cover a database that is awake all month. So `compose.yml` lets the
+  connection pool drain when idle (no minimum, no background keepalive), and keeps the database
+  out of the container healthcheck. The first request after a quiet spell waits a moment while
+  Neon wakes up; sleeping drops the open connections, and the pool simply opens new ones.
 - **Schema.** Flyway migrates on startup, before the web server starts. The backend **refuses to
   start** on a schema it does not match: an edited migration, a migration from a newer release
   (see [Rollback](#rollback)), or a table changed by hand (Hibernate `ddl-auto=validate`).
-  `SchemaMismatchStartupIT` proves all three cases.
-- **Database roles.** `POSTGRES_USER` is the superuser. It is used only to create the cluster and
-  by restores. The backend connects as `DB_USERNAME`, which owns the `DB_NAME` database and
-  nothing else. [`deploy/postgres/init`](deploy/postgres/init/10-app-role.sh) creates both on
-  the first start with an empty volume.
-- **Volumes.** `postgres-data`, `uploads` (documents, photos, videos), `letsencrypt` and
-  `certbot-webroot`. `docker compose down` keeps them. `down -v` deletes them: **never run it on
-  the server.**
+  `SchemaMismatchStartupIT` proves all three cases. Since the healthcheck no longer queries the
+  database, this is what "healthy" means: the backend only serves once the schema matched.
+- **Volumes.** `uploads` (documents, photos, videos), `letsencrypt` and `certbot-webroot`.
+  `docker compose down` keeps them. `down -v` deletes them: **never run it on the server.**
+  **`uploads` is not backed up** (see [Data and recovery](#data-and-recovery)).
 
 ## Environment variables
 
@@ -63,14 +66,13 @@ the template. **No real value is ever committed.** `.env` is gitignored, and the
 server should be `chmod 600`, owned by the deploy user. Compose refuses to start at all when a
 required variable is missing (`${VAR:?}` in `compose.yml`).
 
-Keep a copy of the whole `.env` in the team password manager. It is needed to rebuild the server,
-and it is not in any backup.
+Keep a copy of the whole `.env` in the team password manager. It is needed to rebuild the server.
 
 ### Site and releases
 
 | Variable            | Required | Example / how to generate | Used by |
 | ------------------- | -------- | ------------------------- | ------- |
-| `DOMAIN`            | yes | `tutorspoint.xyz`: the public host name, with no scheme | nginx (server name, certificate path), backend (`FRONTEND_BASE_URL=https://$DOMAIN`, the CORS origin and email links) |
+| `DOMAIN`            | yes | `tutorspoint.xyz`: the public host name, with no scheme | nginx (server name, certificate path, `www` redirect), backend (`FRONTEND_BASE_URL=https://$DOMAIN`, the CORS origin and email links) |
 | `LETSENCRYPT_EMAIL` | yes | an ops mailbox: Let's Encrypt sends expiry warnings here | `issue-certificate.sh` |
 | `BACKEND_TAG`       | yes | `sha-1a2b3c4`, written by `deploy.sh` | backend image tag |
 | `FRONTEND_TAG`      | yes | `sha-5d6e7f8`, written by `deploy.sh` | frontend image tag |
@@ -79,17 +81,12 @@ and it is not in any backup.
 
 ### Database
 
-| Variable            | Required | Example / how to generate | Used by |
-| ------------------- | -------- | ------------------------- | ------- |
-| `POSTGRES_USER`     | yes | `postgres` | postgres superuser: cluster creation and restores only |
-| `POSTGRES_PASSWORD` | yes | `openssl rand -base64 24` | as above |
-| `DB_NAME`           | yes | `tutorspoint` | the application database |
-| `DB_USERNAME`       | yes | `tutorspoint` | the application's role, which owns `DB_NAME` |
-| `DB_PASSWORD`       | yes | `openssl rand -base64 24` | backend, backup |
-| `DB_POOL_SIZE`      | no  | default `10`; `5` on a 2 GB server | backend Hikari pool |
-
-The postgres init script reads these **only when the data volume is empty**. Changing them later
-does not change the database: rotate a password with `ALTER ROLE` first, then update `.env`.
+| Variable       | Required | Example / how to generate | Notes |
+| -------------- | -------- | ------------------------- | ----- |
+| `DB_URL`       | yes | `jdbc:postgresql://ep-….ap-southeast-1.aws.neon.tech/tutorspoint?sslmode=require&channelBinding=require` | Neon's **direct** endpoint (no `-pooler` in the host), in JDBC form: see [Neon](#neon). |
+| `DB_USERNAME`  | yes | `tutorspoint` | the Neon role that owns the database |
+| `DB_PASSWORD`  | yes | the role's password, from the Neon console | Resetting it in Neon means updating `.env` and running `docker compose up -d backend`. |
+| `DB_POOL_SIZE` | no  | default `5` | backend Hikari pool (maximum; it drains to zero when idle) |
 
 ### Backend
 
@@ -100,7 +97,7 @@ does not change the database: rotate a password with `ALTER ROLE` first, then up
 | `MAIL_PORT`                   | yes | `587` | |
 | `MAIL_USERNAME`               | yes | `resend` | |
 | `MAIL_PASSWORD`               | yes | a Resend API key with sending access to the domain | |
-| `MAIL_FROM`                   | yes | `no-reply@tutorspoint.xyz` | must be a verified sender domain |
+| `MAIL_FROM`                   | yes | `no-reply@tutorspoint.xyz` | must be a verified sender domain ([Email DNS](#email-dns)) |
 | `MAIL_FROM_NAME`              | yes | `TutorsPoint` | |
 | `PHONE_VERIFICATION_ENABLED`  | no  | default `false` | See the backend `.env.example` before turning this on. |
 | `OTP_DELIVERY`                | no  | default `EMAIL`; `SMS` once the gateway is live | only read while phone verification is on |
@@ -112,66 +109,66 @@ does not change the database: rotate a password with `ALTER ROLE` first, then up
 | `ADMIN_BOOTSTRAP_PASSWORD`    | first deploy | 12+ characters, from the password manager | |
 | `ADMIN_BOOTSTRAP_FULL_NAME`   | no  | `TutorsPoint Admin` | |
 | `ADMIN_BOOTSTRAP_PHONE`       | first deploy | E.164, e.g. `+9477…`, not used by any account | |
-| `JAVA_TOOL_OPTIONS`           | no  | default `-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true` | JVM flags. On a 2 GB server cap the heap instead: `-Xmx640m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true` |
+| `JAVA_TOOL_OPTIONS`           | no  | default `-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true` | JVM flags |
 
 Set by `compose.yml` or the image, never in `.env`: `SPRING_PROFILES_ACTIVE=prod`,
-`DB_URL` (built from `DB_NAME`), `FRONTEND_BASE_URL` (built from `DOMAIN`),
+`FRONTEND_BASE_URL` (built from `DOMAIN`), the pool and healthcheck settings for scale to zero
+(`SPRING_DATASOURCE_HIKARI_*`, `MANAGEMENT_HEALTH_DB_ENABLED=false`),
 `STORAGE_ROOT=/var/lib/tutorspoint/uploads` (the `uploads` volume) and `SERVER_PORT=8080`.
-
-### Backups
-
-Only while backups are on (`COMPOSE_PROFILES=backup`, see [Backups](#backups)). "yes" below
-means "yes, when backups are on": `tp-backup` refuses to run with any of them empty.
-
-| Variable                      | Required | Example / how to generate | Notes |
-| ----------------------------- | -------- | ------------------------- | ----- |
-| `COMPOSE_PROFILES`            | yes | `backup` | Turns backups on: starts the nightly `backup` service, and makes `deploy.sh` take a `predeploy` backup. |
-| `BACKUP_REMOTE`               | yes | `offsite:tutorspoint-backups/production` | `offsite:` + bucket + path. **Create the bucket in the provider's console first.** The key is deliberately not allowed to create buckets, so a backup to a missing bucket fails with `NoSuchBucket`. |
-| `BACKUP_S3_PROVIDER`          | yes | `Cloudflare`, `AWS`, `Backblaze`, `Wasabi`, `Minio`, … | rclone's S3 provider name |
-| `BACKUP_S3_ENDPOINT`          | depends | `https://<account>.r2.cloudflarestorage.com` | empty for AWS |
-| `BACKUP_S3_REGION`            | depends | `auto` (R2), `ap-south-1` (AWS) | |
-| `BACKUP_S3_ACCESS_KEY_ID`     | yes | an access key scoped to **this bucket only** | |
-| `BACKUP_S3_SECRET_ACCESS_KEY` | yes | as above | |
-| `BACKUP_AGE_RECIPIENT`        | yes | `age1…`, the **public** half of the backup key ([generate](#backup-key)) | not a secret |
-| `BACKUP_TIME_UTC`             | no  | default `20:30` (02:00 in Sri Lanka) | `HH:MM`, UTC |
-| `BACKUP_RETENTION_DAYS`       | no  | default `30` | older backups are deleted after each run |
-| `BACKUP_HEARTBEAT_URL`        | no  | a healthchecks.io ping URL | Pinged on success, and `…/fail` on failure. Set it, and set the check's period to one day: it is the only thing that notices a backup that silently stopped running. |
 
 ## First deploy
 
-**Prerequisites:** a VPS (2 vCPU / 4 GB is comfortable; 2 GB works with the settings in
-[Server: AWS EC2](#server-aws-ec2)) running Ubuntu 24.04 with Docker Engine and the Compose
-plugin; a DNS `A` (and `AAAA`, if IPv6) record for `DOMAIN` pointing at it, and
-`CNAME www → DOMAIN` (the certificate covers both, and nginx redirects `www` to the bare
-domain); ports 80 and 443 open to the internet; the sending domain verified at the mail provider
-([Email DNS](#email-dns)); if backups are on, the bucket created at the storage provider.
+**Prerequisites:** the [Neon](#neon) database; a VPS ([Server: AWS EC2](#server-aws-ec2))
+running Ubuntu 24.04 with Docker Engine and the Compose plugin; a DNS `A` record for `DOMAIN`
+pointing at it, and `CNAME www → DOMAIN` (the certificate covers both, and nginx redirects `www`
+to the bare domain); ports 80 and 443 open to the internet; the sending domain verified at the
+mail provider ([Email DNS](#email-dns)).
+
+### Neon
+
+1. **Create the project:** Postgres version **16** (the version development and the tests run,
+   so the schema and text sorting behave the same), region **AWS Asia Pacific (Singapore)**,
+   the closest to Sri Lanka. The region cannot be changed later.
+2. **Limit the compute** (the branch's compute → Edit): autoscaling 0.25 → 0.25 CU. The free
+   plan's monthly compute hours are counted in CU-hours: a compute allowed to scale up uses them
+   several times faster, and this site does not need more.
+3. **Create the role and database:** Roles → New role `tutorspoint` (copy its password: it is
+   shown once), then Databases → New database `tutorspoint`, owner `tutorspoint`. The default
+   `neondb` database and its owner are not used.
+4. **Get the connection string:** Connect → database `tutorspoint`, role `tutorspoint`,
+   **Connection pooling off**. From
+   `postgresql://tutorspoint:<password>@ep-xxx.ap-southeast-1.aws.neon.tech/tutorspoint?sslmode=require&channel_binding=require`
+   make:
+   ```
+   DB_URL=jdbc:postgresql://ep-xxx.ap-southeast-1.aws.neon.tech/tutorspoint?sslmode=require&channelBinding=require
+   DB_USERNAME=tutorspoint
+   DB_PASSWORD=<password>
+   ```
+   The user and password leave the URL, and `channel_binding` becomes `channelBinding`, the
+   JDBC driver's name for it (the driver silently ignores the other spelling).
+
+Free-plan limits to keep an eye on (Neon console → Usage): 0.5 GB of storage and 100 CU-hours
+of compute a month (about 400 hours at 0.25 CU, which scale to zero makes last the month), and a
+6-hour [restore window](#data-and-recovery).
 
 ### Server: AWS EC2
 
 The pilot runs on AWS's Free plan: new accounts get credits that last 6 months, or until they
-run out. **Before that date, upgrade the account to paid or move the server** (see
-[Restoring onto a new server](#restoring-onto-a-new-server)). A Free-plan account that is not
-upgraded is closed, and the server's disk with it. **Backups are off by default**, so before
-moving, take one by hand (`pg_dump` plus a tar of the `uploads` volume), or turn
-[Backups](#backups) on a few days before.
+run out. **Before that date, upgrade the account to paid or move the server**
+([Moving to another server](#moving-to-another-server)). A Free-plan account that is not
+upgraded is closed, and the server's disk with it: the database is on Neon and survives that,
+**the uploaded files do not**.
 
-- **Instance:** `t3.small` (2 vCPU / 2 GB, about $16/month in credits) in `ap-south-1` (Mumbai),
-  Ubuntu 24.04 LTS x86_64, 30 GB gp3. The CI images are amd64 only, so don't pick a Graviton
-  (`t4g`) type.
+- **Instance:** `t3.small` (2 vCPU / 2 GB) in **`ap-southeast-1` (Singapore)**, next to the
+  database: every query crosses between the two, and a request makes several. Ubuntu 24.04 LTS
+  x86_64, 30 GB gp3. The images are amd64 only, so don't pick a Graviton (`t4g`) type.
 - **Security group:** 22 from your own IP only; 80 and 443 from `0.0.0.0/0` and `::/0`.
 - **Elastic IP:** allocate one and associate it, so the address in DNS survives a stop and start.
 - **Budget:** AWS Budgets → a $5 cost budget with email alerts, to catch anything that is not
   covered by credits.
-- **2 GB of RAM** needs swap, and an explicit heap cap in `.env` (both lines are in
-  `.env.example`: `JAVA_TOOL_OPTIONS=-Xmx640m …` and `DB_POOL_SIZE=5`):
-  ```bash
-  sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile
-  sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-  ```
-- **Too small?** If `free -m` shows swap in steady use, or the backend restarts with
-  `OutOfMemoryError`: stop the instance, change its type to `c7i-flex.large` (4 GB), start
-  it. The volume and the Elastic IP stay, so nothing else changes. Then remove the two 2 GB
-  lines from `.env` and run `docker compose up -d backend`.
+- **Too small?** If the backend restarts with `OutOfMemoryError`: stop the instance, change its
+  type to `c7i-flex.large` (4 GB), start it. The volume and the Elastic IP stay, so nothing
+  else changes.
 
 ### Email DNS
 
@@ -194,62 +191,46 @@ records, or some visitors will be sent to the parking page.
    ```
    Only `deploy/` is used on the server. The application arrives as images.
 
-2. <a id="backup-key"></a>**Only if backups are on — create the backup key, on your own
-   machine, not the server:**
-   ```bash
-   age-keygen -o tutorspoint-backup.key     # prints "Public key: age1..."
-   ```
-   Put the **private** key file in the password manager, and in at least one more place the
-   server's owner controls (for example an encrypted USB drive). Without it no backup can be
-   restored. Only the public key (`age1…`) goes in `.env`.
-
-3. **Fill in `.env`:**
+2. **Fill in `.env`:**
    ```bash
    cp .env.example .env && chmod 600 .env && nano .env
    ```
    Set `BACKEND_TAG` and `FRONTEND_TAG` to the `sha-` tags of the commits on `main` you are
-   deploying (GitHub → the repository → Packages, or the CI run's summary).
+   deploying (GitHub → the repository → Packages, or the CI run's summary), and the three
+   database values from [Neon](#neon).
 
-4. **Log in to GHCR** if the packages are private. Use a classic personal access token with
+3. **Log in to GHCR** if the packages are private. Use a classic personal access token with
    only `read:packages`:
    ```bash
    echo "<token>" | docker login ghcr.io -u <github-user> --password-stdin
    ```
 
-5. **Start the database** and check that the init script created the application role:
-   ```bash
-   docker compose up -d postgres
-   docker compose exec postgres psql -U postgres -c '\l'      # DB_NAME, owned by DB_USERNAME
-   ```
-
-6. **Issue the certificate.** nginx must not be running yet:
+4. **Issue the certificate.** nginx must not be running yet:
    ```bash
    ./issue-certificate.sh --staging   # first, to prove DNS and port 80 without using up the rate limit
    docker compose run --rm --entrypoint certbot certbot delete --cert-name "$(grep ^DOMAIN= .env | cut -d= -f2)"
    ./issue-certificate.sh             # the real certificate
    ```
 
-7. **Start everything:**
+5. **Start everything:**
    ```bash
-   ./deploy.sh --no-backup "$(grep ^BACKEND_TAG= .env | cut -d= -f2)" "$(grep ^FRONTEND_TAG= .env | cut -d= -f2)"
+   ./deploy.sh "$(grep ^BACKEND_TAG= .env | cut -d= -f2)" "$(grep ^FRONTEND_TAG= .env | cut -d= -f2)"
    ```
-   The script waits for the backend's healthcheck, then requests `https://$DOMAIN/` and
-   `/api/reference`.
+   Flyway creates the schema in the empty Neon database on this first start. The script waits
+   for the backend's healthcheck, then requests `https://$DOMAIN/` and `/api/reference`. If the
+   backend does not come up, its log names the problem: a wrong `DB_URL` or password shows as a
+   connection or authentication error before any migration runs.
 
-8. **Sign in as the bootstrap admin** at `https://$DOMAIN/login`. Then remove the four
+6. **Sign in as the bootstrap admin** at `https://$DOMAIN/login`. Then remove the four
    `ADMIN_BOOTSTRAP_*` lines from `.env` and run `docker compose up -d backend`.
 
-9. **Only if backups are on — prove they work before anyone uses the site:**
-   ```bash
-   docker compose run --rm backup backup manual     # must end with "done"
-   ```
-   Then run a [restore drill](#restore-drill) and add a row to the [drill log](#restore-drill-log).
-
-10. **Check from outside:** `https://$DOMAIN` loads over a valid certificate, `http://` redirects
-    to it, `https://www.$DOMAIN` redirects to the bare domain, and
-    https://www.ssllabs.com/ssltest/ grades it A or better. Then run the end-to-end
-    smoke test from the development plan (register a tutor, verify, publish, search, enquire,
-    reply).
+7. **Check from outside:** `https://$DOMAIN` loads over a valid certificate, `http://` redirects
+   to it, `https://www.$DOMAIN` redirects to the bare domain, and
+   https://www.ssllabs.com/ssltest/ grades it A or better. Then run the end-to-end smoke test
+   from the development plan (register a tutor, verify, publish, search, enquire, reply).
+   Finally, leave the site alone for 10 minutes and check that Neon shows the compute as
+   **Idle**: if it never goes idle, something is keeping it awake and the month's compute hours
+   will run out.
 
 ## Releasing
 
@@ -263,13 +244,19 @@ git pull                                    # when deploy/ itself changed
 ```
 
 `deploy.sh` pulls both images first, so a mistyped tag fails before anything changes. It then
-takes a **`predeploy` backup**, writes the tags to `.env`, appends a line to `releases.log`,
-recreates the containers and waits for the backend's healthcheck. The backend is healthy only
-after Flyway has migrated and Hibernate has validated the schema. If it does not become healthy,
-the script prints the backend's last log lines and the exact rollback command.
+writes the tags to `.env`, appends a line with the UTC time to `releases.log`, recreates the
+containers and waits for the backend's healthcheck. The backend is healthy only after Flyway has
+migrated and Hibernate has validated the schema. If it does not become healthy, the script
+prints the backend's last log lines and the exact rollback command.
 
 Expect a few seconds of 502s from `/api` while the backend restarts. Compose runs one replica,
 and zero-downtime releases are out of scope for the pilot.
+
+**A release that adds a migration** can only be undone within Neon's 6-hour restore window (see
+[Rollback](#rollback)). For a risky migration, create a Neon branch just before releasing
+(Branches → New branch, from the production branch, "now"): it is a snapshot that does not
+expire, and costs nothing while the two are the same. Delete it once the release has proved
+itself.
 
 ## Rollback
 
@@ -283,7 +270,7 @@ tail -n 5 releases.log
 src/main/resources/db/migration` in the backend repository shows nothing):
 
 ```bash
-./deploy.sh --no-backup sha-<previous-backend> sha-<previous-frontend>
+./deploy.sh sha-<previous-backend> sha-<previous-frontend>
 ```
 
 **If the bad release applied a migration**, the previous backend image will **refuse to start**
@@ -293,154 +280,67 @@ deliberate: the old code was never tested against the new schema. Pick one:
 1. **Roll forward (preferred).** Fix the bug in a new commit. If the migration itself was wrong,
    add a new migration that corrects it. Migrations are never edited or deleted. Then release as
    usual.
-2. **Restore the `predeploy` backup** that `deploy.sh` took just before the bad release (only
-   exists while backups are on; otherwise option 1 is the only one). **This
-   loses every write made since that release.** Weigh that against option 1.
+2. **Restore Neon to just before the release**, only possible within the 6-hour restore window
+   (or from a branch taken before it). **This loses every write made since that time.** Weigh
+   that against option 1.
    ```bash
-   docker compose run --rm backup list | grep predeploy | tail -n 3    # pick the one just before the release
    docker compose stop backend
-   # restore it: see "Restore" below, using that backup's name instead of "latest"
-   ./deploy.sh --no-backup sha-<previous-backend> sha-<previous-frontend>
+   # Neon console → Branches → the production branch → Restore → "From history",
+   # the time from releases.log (UTC) minus a minute → Restore
+   ./deploy.sh sha-<previous-backend> sha-<previous-frontend>
    ```
 
 A frontend-only rollback never involves the database.
 
-## Backups
+## Data and recovery
 
-**Backups are off by default.** Without them, a lost disk, a closed cloud account or a bad
-migration loses the data (accounts, profiles, uploaded documents) for good. To turn them on:
+There is **no backup job**. What protects each kind of data:
 
-1. Create the bucket and a key scoped to it, and the [backup key](#backup-key).
-2. In `.env`, uncomment the backup block from `.env.example` and fill it in, including
-   `COMPOSE_PROFILES=backup`.
-3. Run `docker compose up -d`, which starts the `backup` service. Then do First deploy step 9.
+| Data | Where it lives | Protection |
+| ---- | -------------- | ---------- |
+| Database (accounts, profiles, enquiries) | Neon | Point-in-time restore within the last **6 hours** (free plan), plus any branch you create by hand. |
+| Uploaded files (documents, photos, videos) | the `uploads` volume on the server's disk | **None.** A lost disk or a closed AWS account loses them. |
+| Configuration (`.env`) | the server | the copy in the password manager |
 
-When they are on, the `backup` service runs [`tp-backup`](deploy/backup/tp-backup) every day at `BACKUP_TIME_UTC`.
-Each run:
+**Restoring the database** after a bad write, a mistaken deletion or corruption, within the
+window:
 
-1. `pg_dump --format=custom` of `DB_NAME`, then `pg_restore --list` on the result to prove it is
-   readable;
-2. `tar` of the whole `uploads` volume. A database restored without these files would lose every
-   verification document;
-3. encrypts both with `age` to `BACKUP_AGE_RECIPIENT`, and writes a `MANIFEST` with the schema
-   version, the file count and the SHA-256 of both **unencrypted** files;
-4. uploads the three files to `$BACKUP_REMOTE/<yyyymmddThhmmssZ>-<label>/`, then `rclone check`s
-   the uploaded copies against the local ones;
-5. deletes backups older than `BACKUP_RETENTION_DAYS`, then pings `BACKUP_HEARTBEAT_URL`.
+1. `docker compose stop backend`, so nothing writes during the restore.
+2. Neon console → Branches → the production branch → Restore → "From history" → a time just
+   before the problem. Neon keeps the replaced state as a backup branch, so a wrong choice can
+   itself be undone.
+3. `docker compose up -d backend`, and wait for `healthy`. A restore to before a migration is
+   fine: Flyway applies it again on startup.
+4. Check the site, sign in as an admin, and open a tutor's documents. Documents uploaded after
+   the restore point are still on disk but no longer referenced; nothing else is affected.
 
-The server holds only the public key, so neither a stolen server nor a leaked bucket exposes a
-backup. Labels are `nightly`, `predeploy` (from `deploy.sh`) and `manual`.
-
-```bash
-docker compose logs --tail 50 backup              # the last runs
-docker compose run --rm backup list               # what is off-server
-docker compose run --rm backup backup manual      # one now
-```
-
-Also enable versioning or object lock on the bucket if the provider offers it. The access key on
-the server can delete objects, because pruning needs it to.
-
-## Restore
-
-The private backup key is needed. Copy it onto the server for the duration of the restore only:
+**Copying the uploads off the server** by hand, before any risky operation, and before the AWS
+Free plan ends:
 
 ```bash
-cd /opt/tutorspoint/deploy
-install -m 600 /dev/stdin /root/tutorspoint-backup.key   # paste the key, then Ctrl-D
-KEY="-v /root/tutorspoint-backup.key:/run/secrets/age-identity:ro"
+docker run --rm -v tutorspoint_uploads:/u:ro alpine tar czf - -C /u . > ~/uploads-$(date -u +%Y%m%d).tgz
+# then, from your own machine:
+scp <server>:~/uploads-*.tgz .
 ```
 
-### Restore drill
+## Moving to another server
 
-A drill restores a backup into a scratch database (`<DB_NAME>_restore_drill`), checks it, then
-drops it. **The live database is not touched and the site stays up.** Run one after the first
-deploy, after any change to `deploy/backup`, and monthly.
+For the end of the AWS Free plan, or any new host. The database stays on Neon, so only the
+uploads and the configuration move.
 
-```bash
-docker compose --profile tools run --rm $KEY restore drill latest     # or a backup's name
-```
-
-It downloads and decrypts the backup and fails if either file's SHA-256 differs from the
-`MANIFEST`. It restores with `pg_restore --single-transaction --exit-on-error`, then checks that:
-
-- the restored schema version matches the one recorded at backup time;
-- no migration in the restored history failed;
-- every file the restored database references (documents, photos, videos) is in the restored
-  uploads archive.
-
-It also prints row counts for the main tables. It ends with `drill <name>: PASSED` or exits
-non-zero.
-
-### Restoring production
-
-For when the live database is lost or corrupted, or for a rollback across a migration.
-
-1. **Stop the backend**, so nothing writes during the restore:
+1. On the new server, do [First deploy](#first-deploy) steps 1–3, using the `.env` from the
+   password manager (or the old server).
+2. **Point DNS at the new server** (lower the `A` record's TTL a day before), then issue the
+   certificate there (step 4).
+3. On the old server: `docker compose stop backend`, then copy the uploads as in
+   [Data and recovery](#data-and-recovery), and move the archive to the new server.
+4. On the new server, load them into the volume before starting:
    ```bash
-   docker compose stop backend
+   docker volume create tutorspoint_uploads
+   docker run --rm -i -v tutorspoint_uploads:/u alpine sh -c 'tar xzf - -C /u && chown -R 10001:10001 /u' < uploads-<date>.tgz
+   ./deploy.sh <tags from the old releases.log>
    ```
-2. **Restore.** Use a backup's name from `list` instead of `latest` for a specific one:
-   ```bash
-   docker compose --profile tools run --rm $KEY restore restore latest --yes --with-uploads
-   ```
-   The current database is **renamed**, not dropped, to `<DB_NAME>_before_restore_<timestamp>`.
-   The backup is restored as a fresh `DB_NAME` owned by `DB_USERNAME`, and the same checks as
-   the drill run against it. `--with-uploads` extracts the uploads archive over the volume. It
-   never deletes files, so uploads newer than the backup are kept. Leave it off when only the
-   database is bad.
-3. **Start the backend on the image that matches the backup's schema** (`MANIFEST`
-   `schema_version`, printed during the restore). The currently deployed image is right unless
-   you are rolling back across a migration:
-   ```bash
-   docker compose up -d backend && docker compose ps backend     # wait for "healthy"
-   ```
-   A backup older than the image is fine: Flyway applies the missing migrations on startup. A
-   backup newer than the image refuses to start, by design.
-4. **Check the site**, sign in as an admin, and open a tutor's documents.
-5. **Clean up:**
-   ```bash
-   shred -u /root/tutorspoint-backup.key
-   # after a day or two, once you are sure of the restore:
-   docker compose exec postgres psql -U postgres -c 'DROP DATABASE "tutorspoint_before_restore_<timestamp>"'
-   ```
-
-### Restoring onto a new server
-
-When the VPS itself is gone: do [First deploy](#first-deploy) steps 1–6 on the new server, using
-the `.env` from the password manager. Then `docker compose up -d postgres backup`, and do
-[Restoring production](#restoring-production) from step 2. Finally run `./deploy.sh --no-backup`
-with the tags from the last line of the old `releases.log`, or with the image matching the
-backup's schema version.
-
-## Restore drill log
-
-Every drill and real restore gets a row. A backup that has never been restored is a hope, not a
-backup.
-
-| Date | Environment | Backup restored | Result | By |
-| ---- | ----------- | --------------- | ------ | -- |
-| 2026-09-18 | Local rehearsal of this exact `deploy/` stack (Docker Desktop; rclone's S3 server standing in for the bucket; self-signed certificate) | `20260918T145200Z-nightly`, from the scheduled run | **Passed**, see below | Claude Code, for Pramoth |
-
-**What the 2026-09-18 rehearsal did.** It deployed the stack, registered a tutor through nginx,
-verified the email from the real message, uploaded a photo and a PDF, and had the admin approve
-the PDF. The scheduled backup then fired on time. The rehearsal then:
-
-- **Drill:** `restore drill latest` passed. The same drill on a copy with one ciphertext byte
-  changed failed at decryption (`age: failed to decrypt and authenticate`).
-- **Total loss:** both the `postgres-data` and `uploads` volumes were deleted, and postgres was
-  started empty. `restore restore latest --yes --with-uploads` passed its checks. The backend
-  came up healthy on the restored database, the tutor signed in, and the restored photo and
-  document downloaded through `https://…/api/…` byte-identical to the originals.
-- **Rollback across a migration:** `deploy.sh` v1, then v2 (which added a migration V12), then
-  back to v1. v1 refused to start (`Detected applied migration not resolved locally: 12`), and
-  `deploy.sh` reported it after one restart. Restoring the `predeploy` backup taken before v2
-  and running `deploy.sh --no-backup v1 v1` brought v1 back up healthy on V11.
-- **Refusals:** `restore` refused without `--yes`, without the key, and while the backend held
-  connections. A backup to a missing bucket exited non-zero.
-
-Not covered by the rehearsal: Let's Encrypt issuance and renewal, which need a public domain
-(the ACME webroot path through nginx was checked). The first-deploy drill on the real server is
-still to be done and logged here.
+5. Check the site and a tutor's documents, then shut the old server down.
 
 ## Routine operations
 
@@ -451,10 +351,6 @@ still to be done and logged here.
 | Restart the backend | `docker compose restart backend` |
 | Certificate expiry | `docker compose run --rm --entrypoint certbot certbot certificates` |
 | Force a renewal test | `docker compose run --rm --entrypoint certbot certbot renew --dry-run --webroot -w /var/www/certbot` |
-| psql | `docker compose exec postgres psql -U "$(grep ^DB_USERNAME= .env | cut -d= -f2)" "$(grep ^DB_NAME= .env | cut -d= -f2)"` |
+| psql | from your own machine, with the connection string from the Neon console, or the console's SQL Editor. Never change tables by hand: the backend refuses to start on a schema that does not match its migrations. |
+| Neon usage | Neon console → Usage: storage against 0.5 GB, compute hours against the month's allowance |
 | Disk usage | `docker system df`; `docker image prune -a --filter "until=720h"` keeps a month of images to roll back to |
-
-**Upgrading PostgreSQL** to a new major version is not an in-place image bump. A new major
-cannot open the old data directory. Take a `manual` backup, bump `postgres:16` in
-`compose.yml` **and** `FROM postgres:16-alpine` in `deploy/backup/Dockerfile`, start with a new
-empty volume, and restore into it as in [Restoring onto a new server](#restoring-onto-a-new-server).

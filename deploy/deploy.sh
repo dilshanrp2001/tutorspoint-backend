@@ -2,31 +2,18 @@
 # Releases (or rolls back to) a pair of image tags. DEPLOYMENT.md, "Releasing" and "Rollback".
 #
 #   ./deploy.sh <backend-tag> <frontend-tag>      e.g. ./deploy.sh sha-1a2b3c4 sha-5d6e7f8
-#   ./deploy.sh --no-backup <backend-tag> <frontend-tag>
 #
 # 1. pulls both images first, so a mistyped tag fails before anything has changed;
-# 2. takes a `predeploy` backup, when backups are on - the way back if this release's
-#    migrations must be undone;
-# 3. writes the tags to .env and appends the change to releases.log;
-# 4. recreates the containers and waits for the backend's healthcheck (Flyway has run, and
+# 2. writes the tags to .env and appends the change, with its UTC time, to releases.log. That
+#    time is the point to restore Neon to if this release's migrations must be undone;
+# 3. recreates the containers and waits for the backend's healthcheck (Flyway has run, and
 #    Hibernate has validated the schema, by the time it reports healthy).
 set -euo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=env-value.sh
 . ./env-value.sh
 
-backup=1
-# Backups are opt-in (compose.yml): without the backup profile there is nothing to take one with.
-if [[ ",$(env_value COMPOSE_PROFILES)," != *,backup,* ]]; then
-    backup=0
-    printf 'Backups are off (no COMPOSE_PROFILES=backup in .env): no predeploy backup. A release\n' >&2
-    printf 'whose migration goes wrong can only be rolled forward - DEPLOYMENT.md, "Rollback".\n' >&2
-fi
-if [[ "${1:-}" == "--no-backup" ]]; then
-    backup=0
-    shift
-fi
-[[ $# -eq 2 ]] || { sed -n '4,5p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[[ $# -eq 2 ]] || { sed -n '4p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 new_backend=$1
 new_frontend=$2
 old_backend=$(env_value BACKEND_TAG)
@@ -37,11 +24,6 @@ log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 log "pulling backend:$new_backend and frontend:$new_frontend"
 BACKEND_TAG=$new_backend FRONTEND_TAG=$new_frontend docker compose pull backend nginx
 
-if (( backup )); then
-    log "taking a predeploy backup"
-    docker compose run --rm backup backup predeploy
-fi
-
 set_env_value BACKEND_TAG "$new_backend"
 set_env_value FRONTEND_TAG "$new_frontend"
 printf '%s backend=%s frontend=%s (was backend=%s frontend=%s)\n' \
@@ -49,7 +31,7 @@ printf '%s backend=%s frontend=%s (was backend=%s frontend=%s)\n' \
     "${old_backend:-none}" "${old_frontend:-none}" >> releases.log
 
 log "starting the new containers"
-docker compose up -d --build --remove-orphans
+docker compose up -d --remove-orphans
 
 backend_container=$(docker compose ps -q backend)
 for _ in $(seq 1 60); do
@@ -75,14 +57,14 @@ if [[ "$health" != healthy ]]; then
         cat >&2 <<EOF
 
 The database has a migration this image does not know: it is older than the schema. Either
-deploy an image at least as new as the schema, or restore the predeploy backup taken before
-that migration ran - DEPLOYMENT.md, "Rollback".
+deploy an image at least as new as the schema, or restore Neon to just before that migration
+ran (its release time is in releases.log) - DEPLOYMENT.md, "Rollback".
 EOF
     else
         cat >&2 <<EOF
 
 The release did not start. To go back to what was running before:
-    ./deploy.sh --no-backup ${old_backend:-<previous-backend-tag>} ${old_frontend:-<previous-frontend-tag>}
+    ./deploy.sh ${old_backend:-<previous-backend-tag>} ${old_frontend:-<previous-frontend-tag>}
 If that backend then refuses to start because this release applied a migration, see
 DEPLOYMENT.md, "Rollback".
 EOF
