@@ -20,6 +20,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Duration;
@@ -48,8 +49,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>Not transactional: the notification runs after commit on another thread, and it is that
  * thread's log lines this is most interested in. The accounts use addresses no other test does.
+ *
+ * <p>Phone verification is switched on for this class alone, unlike the deployed default
+ * (AuthProperties#phoneVerificationEnabled). The OTP is the hardest of these secrets to keep out
+ * of a log - it is short, it travels through an adapter that fails loudly, and it is written in
+ * clear in the message text - so the guarantee is worth holding even while the feature is parked.
+ * Turning the flag back on must not be the moment this stops being checked.
  */
 @ExtendWith(OutputCaptureExtension.class)
+@TestPropertySource(properties = "tutorspoint.auth.phone-verification-enabled=true")
 class SensitiveDataLoggingIT extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "Kandy-Lake-2026";
@@ -91,6 +99,11 @@ class SensitiveDataLoggingIT extends AbstractIntegrationTest {
                          "phoneNumber": "%s", "preferredLanguage": "EN"}
                         """.formatted(NEW_PARENT_EMAIL, PASSWORD, NEW_PARENT_PHONE)))
                 .andExpect(status().isCreated());
+
+        // Signup sends the email link and nothing else, so the code is asked for separately.
+        mockMvc.perform(post("/api/auth/request-otp").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\": \"%s\"}".formatted(NEW_PARENT_EMAIL)))
+                .andExpect(status().isOk());
 
         ArgumentCaptor<String> smsText = ArgumentCaptor.forClass(String.class);
         verify(smsProvider, timeout(10_000)).send(eq(NEW_PARENT_PHONE), smsText.capture());
