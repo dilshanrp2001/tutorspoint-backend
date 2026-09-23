@@ -183,7 +183,16 @@ records, or some visitors will be sent to the parking page.
 
 ### Steps
 
-1. **Clone the deployment files** (as a non-root deploy user in the `docker` group):
+0. **Prepare the server** (once, over SSH as `ubuntu`):
+   ```bash
+   sudo apt-get update && sudo apt-get -y upgrade
+   curl -fsSL https://get.docker.com | sudo sh        # Docker Engine + the Compose plugin
+   sudo usermod -aG docker "$USER"                    # then log out and back in
+   docker compose version                             # after logging back in: prints a version
+   ```
+   Unattended security updates are on by default in Ubuntu's AWS images.
+
+1. **Clone the deployment files:**
    ```bash
    sudo mkdir -p /opt/tutorspoint && sudo chown "$USER" /opt/tutorspoint
    git clone https://github.com/dilshanrp2001/tutorspoint-backend.git /opt/tutorspoint
