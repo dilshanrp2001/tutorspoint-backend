@@ -1,0 +1,58 @@
+# Local development. Values come from .env (see .env.example); nothing is hardcoded.
+# Start the database with: docker compose up -d
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+tutorspoint:
+  notification:
+    email:
+      from: ${MAIL_FROM}
+      from-name: ${MAIL_FROM_NAME:TutorsPoint}
+    # No SMS gateway config here: the dev profile uses LoggingSmsProvider, which prints
+    # the OTP instead of paying to send it.
+
+  security:
+    jwt:
+      # Base64-encoded 256-bit key: openssl rand -base64 32
+      secret: ${JWT_SECRET}
+
+  storage:
+    local:
+      # Under the working directory, and gitignored. A developer's uploads are throwaway;
+      # production mounts a volume instead (see application-prod.yml).
+      root: ${STORAGE_ROOT:./var/uploads}
+
+  seed:
+    # Demo tutors with published profiles, so search has a realistic volume to work on
+    # (DemoTutorSeedRunner). Runs once: skipped when the demo tutors already exist.
+    # SEED_DEMO_TUTORS=0 keeps the local directory empty.
+    demo-tutors: ${SEED_DEMO_TUTORS:500}
+
+logging:
+  level:
+    com.tutorspoint: DEBUG
+    # Not org.hibernate.orm.jdbc.bind at TRACE: it prints every bound value, which means password
+    # hashes, token digests and full phone numbers. show-sql above prints the statements.

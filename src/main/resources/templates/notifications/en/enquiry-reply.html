@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Your tutor has replied</title>
+</head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2933;">
+<div style="max-width:520px;margin:0 auto;padding:32px;background:#ffffff;border-radius:8px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;border-collapse:collapse;">
+        <tr>
+            <td style="padding:0 10px 0 0;vertical-align:middle;"><img src="cid:tutorspoint-logo" width="40" height="40" alt="" style="display:block;border:0;"></td>
+            <td style="vertical-align:middle;"><h1 style="margin:0;font-size:20px;">TutorsPoint</h1></td>
+        </tr>
+    </table>
+    <p>Hello <span th:text="${seekerName}">there</span>,</p>
+    <p><span th:text="${tutorName}">Your tutor</span> has replied to your enquiry.</p>
+    <p style="margin:28px 0;">
+        <a th:href="${threadUrl}"
+           style="display:inline-block;padding:12px 24px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;">
+            Read the reply
+        </a>
+    </p>
+    <!-- The message itself is deliberately not included. It is readable on the platform,
+         where the thread and the contact details it has now unlocked live together, and an
+         email that quoted it would put a conversation we promised to keep on-platform into
+         an inbox we do not control. -->
+    <p>Their contact details are now visible on the thread, and yours are visible to them.</p>
+    <p>If the button does not work, paste this address into your browser:</p>
+    <p style="word-break:break-all;font-size:13px;color:#52606d;" th:text="${threadUrl}">https://tutorspoint.xyz</p>
+</div>
+</body>
+</html>

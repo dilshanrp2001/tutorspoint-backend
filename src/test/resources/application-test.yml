@@ -1,0 +1,59 @@
+# Integration-test profile (see AbstractIntegrationTest). The datasource comes from the
+# Testcontainers Postgres via @ServiceConnection; everything else a bean needs to exist
+# is stubbed here.
+#
+# Nothing in this file can reach the outside world: no test sends mail, and the SMS
+# gateway is pointed at a dead local port. The test profile is not "dev", so it wires
+# the real NotifyLkSmsProvider rather than the logging one — which is precisely what
+# makes the context load prove that adapter's configuration binds.
+spring:
+  jpa:
+    properties:
+      hibernate:
+        # Statement counts for QueryCountIT, which proves search and profile reads are free of N+1
+        # queries. The per-session summary Hibernate logs with it is silenced below.
+        generate_statistics: true
+  mail:
+    host: localhost
+    port: 3025
+
+tutorspoint:
+  storage:
+    local:
+      # A throwaway directory per JVM. Integration tests write real files through the real
+      # LocalDiskFileStorage - stubbing the store would leave the upload path untested at
+      # exactly the point where it touches something outside the process.
+      root: ${java.io.tmpdir}/tutorspoint-test-uploads
+
+  # Off: every integration test request comes from one address, and a suite that registers
+  # and signs in dozens of accounts would trip the limits it is not testing. RateLimitIT turns
+  # them back on, with small numbers, in a context of its own.
+  rate-limit:
+    enabled: false
+
+  auth:
+    # Pinned to SMS, whatever the deployed default is. The integration tests capture the
+    # OTP off the SMS provider, and that path is the one FR-A2 actually asks for; the
+    # email variant is covered in AuthServiceImplTest.
+    otp-delivery: SMS
+
+  security:
+    jwt:
+      # A fixed throwaway key, base64 of 32 bytes. Tests must sign and verify real tokens;
+      # nothing this key protects exists outside the test JVM.
+      secret: dGVzdC1vbmx5LXNpZ25pbmcta2V5LW5vdC1hLXNlY3JldCE=
+
+  notification:
+    email:
+      from: no-reply@tutorspoint.test
+      from-name: TutorsPoint
+    sms:
+      notify-lk:
+        base-url: http://localhost:1/api/v1
+        user-id: test-user
+        api-key: test-key
+        sender-id: TutorsPoint
+
+logging:
+  level:
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN

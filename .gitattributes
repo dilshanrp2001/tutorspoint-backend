@@ -1,2 +1,7 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# Run on Linux (the server, containers): LF whatever the checkout platform.
+*.sh text eol=lf
+deploy/** text eol=lf
+Dockerfile text eol=lf

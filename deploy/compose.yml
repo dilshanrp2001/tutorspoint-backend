@@ -1,0 +1,104 @@
+# Production stack for one VPS. See DEPLOYMENT.md at the repository root.
+#
+#   internet :80/:443 -> nginx (frontend image: static bundle + TLS + /api proxy)
+#                          -> backend:8080 (never published) -> Neon PostgreSQL (hosted, TLS)
+#   certbot renews the certificate.
+#
+# Every value comes from deploy/.env on the server (template: .env.example). `${VAR:?}` makes
+# `docker compose` refuse to start at all when a required one is missing, instead of passing
+# an empty string through to a service that would then fail in a less obvious way.
+
+name: tutorspoint
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/dilshanrp2001/tutorspoint-backend}:${BACKEND_TAG:?}
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # Neon's DIRECT connection string (no "-pooler" in the host): Flyway migrates over this
+      # connection at startup, and PgBouncer's transaction mode breaks its session-level locks.
+      DB_URL: ${DB_URL:?}
+      DB_USERNAME: ${DB_USERNAME:?}
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      # Let Neon scale to zero when nobody is using the site: the free plan's compute hours do
+      # not cover a database that is awake all month. Suspending drops every connection.
+      # - an idle pool drains after a minute and is not refilled or pinged in the background;
+      # - the container healthcheck (every 15s) does not touch the database. The backend only
+      #   serves once Flyway has migrated, so "healthy" still means the schema matched.
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "0"
+      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: "60000"
+      SPRING_DATASOURCE_HIKARI_KEEPALIVE_TIME: "0"
+      MANAGEMENT_HEALTH_DB_ENABLED: "false"
+      JWT_SECRET: ${JWT_SECRET:?}
+      MAIL_HOST: ${MAIL_HOST:?}
+      MAIL_PORT: ${MAIL_PORT:?}
+      MAIL_USERNAME: ${MAIL_USERNAME:?}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?}
+      MAIL_FROM: ${MAIL_FROM:?}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:?}
+      PHONE_VERIFICATION_ENABLED: ${PHONE_VERIFICATION_ENABLED:-false}
+      OTP_DELIVERY: ${OTP_DELIVERY:-EMAIL}
+      SMS_NOTIFY_LK_BASE_URL: ${SMS_NOTIFY_LK_BASE_URL:?}
+      SMS_NOTIFY_LK_USER_ID: ${SMS_NOTIFY_LK_USER_ID:?}
+      SMS_NOTIFY_LK_API_KEY: ${SMS_NOTIFY_LK_API_KEY:?}
+      SMS_NOTIFY_LK_SENDER_ID: ${SMS_NOTIFY_LK_SENDER_ID:?}
+      FRONTEND_BASE_URL: https://${DOMAIN:?}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      ADMIN_BOOTSTRAP_FULL_NAME: ${ADMIN_BOOTSTRAP_FULL_NAME:-TutorsPoint Admin}
+      ADMIN_BOOTSTRAP_PHONE: ${ADMIN_BOOTSTRAP_PHONE:-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true}
+    volumes:
+      # Uploaded documents, photos and videos. The image sets STORAGE_ROOT to this path.
+      - uploads:/var/lib/tutorspoint/uploads
+    # The healthcheck is in the image (Dockerfile HEALTHCHECK, /actuator/health).
+    logging: &logging
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  nginx:
+    image: ${FRONTEND_IMAGE:-ghcr.io/dilshanrp2001/tutorspoint-frontend}:${FRONTEND_TAG:?}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Substituted into nginx/templates/*.template by the nginx image's entrypoint.
+      DOMAIN: ${DOMAIN:?}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    # Reload every 6 hours so a certificate certbot renewed is picked up without a restart.
+    command: >-
+      /bin/sh -c 'while :; do sleep 6h & wait $$!; nginx -s reload; done &
+      exec /docker-entrypoint.sh nginx -g "daemon off;"'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+  certbot:
+    image: certbot/certbot:v5.8.0
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    # Twice a day, as Let's Encrypt asks; renew is a no-op until 30 days before expiry. The
+    # first certificate is issued by deploy/issue-certificate.sh, before nginx can start.
+    entrypoint: >-
+      /bin/sh -c 'trap exit TERM; while :; do
+      certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $$!; done'
+    logging: *logging
+
+volumes:
+  # On the server's disk only, and not backed up: a lost disk loses every uploaded file.
+  uploads:
+  letsencrypt:
+  certbot-webroot:

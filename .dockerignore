@@ -1,0 +1,5 @@
+# Only pom.xml and src/ are needed to build the image. Everything else stays out of the build
+# context - above all .env, which holds real credentials.
+*
+!pom.xml
+!src/
