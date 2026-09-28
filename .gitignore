@@ -34,6 +34,17 @@ build/
 
 .idea/
 *.class
+
+### Secrets & local overrides — never commit these ###
 .env
+.env.*
+!.env.example
+application-local.yml
 application-local.properties
-application.properties
+src/main/resources/application-local.yml
+
+### Uploaded files (dev storage root) - user content, never committed ###
+var/
+
+### Deployment - per-server state, never committed ###
+deploy/releases.log

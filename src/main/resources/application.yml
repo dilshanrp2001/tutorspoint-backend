@@ -1,0 +1,198 @@
+# Profile-agnostic configuration. Anything environment-specific or secret lives in
+# application-dev.yml / application-prod.yml and is read from environment variables.
+spring:
+  application:
+    name: tutorspoint-backend
+  profiles:
+    default: dev
+
+  jpa:
+    # NEVER 'update'. The schema is owned by Flyway migrations; Hibernate only checks
+    # that the entities match the migrated schema.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        # Lazy collections load for up to 50 owners per query instead of one query each. A
+        # page of search results would otherwise issue a query per card per list it shows.
+        default_batch_fetch_size: 50
+
+  datasource:
+    hikari:
+      data-source-properties:
+        # A constraint violation otherwise arrives with PostgreSQL's DETAIL line - "Key
+        # (phone_number)=(+94771234567) already exists" - in the exception message, and from
+        # there in the log. The constraint name is still reported; the row's values are not.
+        logServerErrorDetail: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    clean-disabled: true
+
+  # Translatable text resolved from messages*.properties. English (messages.properties)
+  # is the fallback; the machine's locale must never decide what a user is sent.
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+
+  # Pool behind @Async. Notifications run here, off the request thread.
+  task:
+    execution:
+      thread-name-prefix: tp-async-
+      pool:
+        core-size: 2
+        max-size: 8
+        queue-capacity: 100
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+  servlet:
+    multipart:
+      # The container's ceiling. Each upload has its own, lower limit in StorageArea; this
+      # one exists so an oversized body is refused before it is read into memory at all.
+      max-file-size: 5MB
+      max-request-size: 10MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+
+# Actuator: only health and info are exposed. Nothing else — env, beans, mappings and
+# heapdump leak configuration and secrets.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+  health:
+    # The mail indicator opens an SMTP connection on every probe. Notifications are
+    # fire-and-forget by design, so a mail outage must not report the application as
+    # DOWN and have the platform pull it out of rotation.
+    mail:
+      enabled: false
+  info:
+    env:
+      enabled: false
+
+# Swagger UI at /swagger-ui.html
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+
+# Auth policy. Not secrets and not environment-specific, so the values live here; the
+# signing key and the database credentials come from the environment (see the dev/prod files).
+tutorspoint:
+  security:
+    jwt:
+      issuer: tutorspoint
+      # Short, because nothing can revoke an access token before it expires. The client
+      # refreshes silently; the user notices nothing.
+      access-token-ttl: 15m
+      # Long, because this is what keeps a user signed in — and it is revocable, rotated on
+      # every use, and stored only as a digest.
+      refresh-token-ttl: 30d
+  auth:
+    email-verification-ttl: 24h
+    password-reset-ttl: 30m
+    otp-ttl: 5m
+    # Off until there is an SMS gateway account. Signup sends one message — the email
+    # verification link — and /auth/request-otp and /auth/verify-otp refuse, so no second
+    # code lands in the same inbox. Turning this on is the switch back to two-channel
+    # verification: set it true with OTP_DELIVERY=SMS, and restore the phoneVerified check
+    # in User#isFullyVerified().
+    phone-verification-enabled: ${PHONE_VERIFICATION_ENABLED:false}
+    # Only consulted while phone-verification-enabled is true.
+    # EMAIL until there is an SMS gateway account: the code goes to the registered address
+    # over the mail transport we already pay for. This verifies the address, not the
+    # handset, so the phone number is effectively unproven while it is set. Switch to SMS
+    # once the gateway credentials are in the environment — nothing else has to change.
+    otp-delivery: ${OTP_DELIVERY:EMAIL}
+    # Kept whichever transport is in use: an SMS costs money per message, and an emailed
+    # code is still a live secret (see the cost note in the development plan).
+    max-otp-sends-per-hour: 3
+    # The emailed links point at frontend pages, which post the token to the API. A token in
+    # a GET query string would end up in browser history and proxy logs.
+    verify-email-url: ${FRONTEND_BASE_URL:http://localhost:5173}/verify-email
+    reset-password-url: ${FRONTEND_BASE_URL:http://localhost:5173}/reset-password
+  admin:
+    # The first administrator, created at startup when an email is set (AdminBootstrapRunner).
+    # There is no admin registration: this is the only way an admin account comes to exist.
+    # Idempotent; remove the variables from the environment once the account exists.
+    bootstrap:
+      email: ${ADMIN_BOOTSTRAP_EMAIL:}
+      password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+      full-name: ${ADMIN_BOOTSTRAP_FULL_NAME:TutorsPoint Admin}
+      phone-number: ${ADMIN_BOOTSTRAP_PHONE:}
+  # Browser origins allowed to call the API cross-origin. The frontend only; wildcards are
+  # refused at startup (CorsProperties). Comma-separated if there is ever more than one.
+  cors:
+    allowed-origins: ${FRONTEND_BASE_URL:http://localhost:5173}
+  # HTTP rate limits (RateLimitFilter): token buckets per client address and per account,
+  # answered with 429 and Retry-After. Every action must be listed, or startup fails.
+  #
+  # Per-address limits are deliberately loose. Sri Lankan mobile networks put many subscribers
+  # behind one carrier-grade NAT address, and a school or an office shares one too: a tight
+  # per-address limit would lock out a whole classroom for one student's typo. The per-account
+  # limits are the tight ones, and the domain caps behind them (OTP sends, enquiries per hour)
+  # stay the final word.
+  rate-limit:
+    enabled: true
+    actions:
+      login:
+        per-client: { requests: 30, per: 5m }
+        per-account: { requests: 10, per: 15m }
+      # Every attempt counts, including one refused for a weak password, so the per-account
+      # number leaves room for a person correcting a form several times.
+      register:
+        per-client: { requests: 20, per: 1h }
+        per-account: { requests: 10, per: 1h }
+      otp-request:
+        per-client: { requests: 20, per: 1h }
+        per-account: { requests: 5, per: 1h }
+      # Both halves of recovery share these: requesting the link, and posting the new password.
+      password-reset:
+        per-client: { requests: 20, per: 1h }
+        per-account: { requests: 5, per: 1h }
+      enquiry-creation:
+        per-client: { requests: 60, per: 1h }
+        per-account: { requests: 20, per: 1h }
+      # The search page re-queries as filters change, so a person is well above one a second
+      # in bursts. The limit is for a scraper walking every page, not for them.
+      search:
+        per-client: { requests: 300, per: 1m }
+        per-account: { requests: 120, per: 1m }
+  enquiry:
+    # A domain cap, counted against the enquiries table, not the HTTP rate limiter that
+    # arrives in Phase 5.2. Generous for a parent comparing tutors over an evening, low
+    # enough that no account mails an entire district. A parent may also hold only one open
+    # thread per tutor at a time, which is a rule rather than a number and lives in the code.
+    max-per-hour: 10
+    # The thread page the enquiry notifications link to; the enquiry id is appended.
+    thread-url: ${FRONTEND_BASE_URL:http://localhost:5173}/enquiries
+
+logging:
+  pattern:
+    # The request id (RequestIdFilter) on every line of the plain-text log, which is what dev
+    # and the tests write. Production logs JSON instead, where it is a field of its own.
+    correlation: "[%X{requestId:-}] "
+  level:
+    com.tutorspoint: INFO

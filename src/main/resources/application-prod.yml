@@ -1,0 +1,81 @@
+# Production. Every value is supplied by the environment. No defaults, no fallbacks —
+# a missing variable must fail startup loudly rather than run on a guess.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    show-sql: false
+
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+tutorspoint:
+  notification:
+    email:
+      from: ${MAIL_FROM}
+      from-name: ${MAIL_FROM_NAME}
+    sms:
+      notify-lk:
+        base-url: ${SMS_NOTIFY_LK_BASE_URL}
+        user-id: ${SMS_NOTIFY_LK_USER_ID}
+        api-key: ${SMS_NOTIFY_LK_API_KEY}
+        sender-id: ${SMS_NOTIFY_LK_SENDER_ID}
+
+  auth:
+    # No dev fallback here, unlike application.yml: a verification link pointing at
+    # localhost in production would be silently useless.
+    verify-email-url: ${FRONTEND_BASE_URL}/verify-email
+    reset-password-url: ${FRONTEND_BASE_URL}/reset-password
+
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+
+  # No fallback, as for the links above: a production API that allowed localhost would be wrong.
+  cors:
+    allowed-origins: ${FRONTEND_BASE_URL}
+
+  storage:
+    local:
+      # A mounted volume, with no default on purpose. A path inside the container would
+      # accept every upload and lose all of them on the next deployment.
+      root: ${STORAGE_ROOT}
+
+server:
+  # The API sits behind nginx (deploy/), which overwrites X-Forwarded-For with the address it
+  # accepted the connection from and sets X-Forwarded-Proto. Tomcat takes them only from an
+  # internal address - the Docker network - so getRemoteAddr() is the visitor, not the proxy.
+  # Without this every visitor shares one rate-limit bucket (RateLimitFilter), the audit log
+  # records the proxy's address, and no response is known to be HTTPS, so HSTS is never sent.
+  forward-headers-strategy: native
+
+# Swagger is not exposed in production.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  # One JSON object per line (Elastic Common Schema), so the log can be searched by field. The
+  # logging context goes in as fields, the request id among them.
+  structured:
+    format:
+      console: ecs
+  level:
+    root: WARN
+    com.tutorspoint: INFO

@@ -1,0 +1,185 @@
+package com.tutorspoint.common.exception;
+
+import com.tutorspoint.common.api.ApiResponse;
+import com.tutorspoint.common.api.ApiResponse.ApiError;
+import com.tutorspoint.common.logging.RequestIdFilter;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.validation.BindException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The single place errors become HTTP responses. Controllers therefore contain
+ * no try/catch and error formatting has one authoritative home.
+ */
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(ResourceNotFoundException ex) {
+        log.debug("Resource not found: {}", ex.getMessage());
+        return respond(HttpStatus.NOT_FOUND, ApiError.of(ex.getCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(BusinessRuleViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusinessRule(BusinessRuleViolationException ex) {
+        log.debug("Business rule violated: {}", ex.getMessage());
+        return respond(HttpStatus.CONFLICT, ApiError.of(ex.getCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthenticationFailed(AuthenticationFailedException ex) {
+        log.debug("Authentication failed: {}", ex.getMessage());
+        return respond(HttpStatus.UNAUTHORIZED, ApiError.of(ex.getCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(UnauthorizedActionException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnauthorizedAction(UnauthorizedActionException ex) {
+        log.warn("Unauthorized action: {}", ex.getMessage());
+        return respond(HttpStatus.FORBIDDEN, ApiError.of(ex.getCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            // A binding failure - medium=KLINGON against an enum, page=two against a number -
+            // carries Spring's own message, which names internal Java types. Say only that the
+            // value was not accepted.
+            String message = error.isBindingFailure() || error.getDefaultMessage() == null
+                    ? "is invalid"
+                    : error.getDefaultMessage();
+            fieldErrors.merge(error.getField(), message, (first, second) -> first + "; " + second);
+        }
+        return respond(HttpStatus.BAD_REQUEST,
+                ApiError.withFields("VALIDATION_FAILED", "Request validation failed", fieldErrors));
+    }
+
+    /**
+     * The body could not be read at all: malformed JSON, or a value outside what the DTO can
+     * hold — {@code "role": "ADMIN"} against an enum that offers only TUTOR, PARENT and STUDENT.
+     *
+     * <p>That is the caller's mistake, so it is a 400. Without this it would reach the
+     * catch-all and be reported as a server error, which would send a client looking for a
+     * fault that is in its own request. The cause is deliberately not echoed: it carries
+     * internal type names and the offending input.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        // The type only. Jackson's message quotes the value it could not read, and the value
+        // could be a password or a token.
+        log.debug("Unreadable request body: {}", ex.getMostSpecificCause().getClass().getSimpleName());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of("MALFORMED_REQUEST",
+                "The request body could not be read. Check the JSON and the allowed values."));
+    }
+
+    /**
+     * The request could not be bound to the handler's parameters: a query or form field that is
+     * absent, or one that cannot be converted - {@code documentType=PASSPORT} against an enum
+     * that does not offer it, an id that is not a number.
+     *
+     * <p>All of it is the caller's mistake, so all of it is a 400. Without these the catch-all
+     * would report a mistyped parameter as a server error and send a client hunting for a fault
+     * that is in its own request. The offending value is not echoed back.
+     */
+    @ExceptionHandler({
+            MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
+            MethodArgumentTypeMismatchException.class,
+            BindException.class})
+    public ResponseEntity<ApiResponse<Void>> handleBadRequestBinding(Exception ex) {
+        log.debug("Unbindable request: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of("MALFORMED_REQUEST",
+                "The request is missing a required value, or one of them is not a value this endpoint accepts."));
+    }
+
+    /**
+     * The container refused an upload before the handler saw it, because the multipart limits in
+     * {@code application.yml} were exceeded.
+     *
+     * <p>Handled here so an oversized file gets the same code and the same envelope as one this
+     * application rejects itself - a client should not have to tell the two apart to know that
+     * the file was too big.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        log.debug("Upload rejected as too large: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of(InvalidUploadException.TOO_LARGE,
+                "The uploaded file is larger than this endpoint accepts"));
+    }
+
+    /**
+     * A file the platform will not take: the wrong format, or over the limit for that upload.
+     */
+    @ExceptionHandler(InvalidUploadException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidUpload(InvalidUploadException ex) {
+        log.debug("Upload rejected: {}", ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, ApiError.of(ex.getCode(), ex.getMessage()));
+    }
+
+    /**
+     * Raised by {@code @PreAuthorize} when a method-level rule rejects an authenticated
+     * caller. Without this, Spring Security's own 403 page would bypass the standard
+     * error envelope that every other failure returns.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        return respond(HttpStatus.FORBIDDEN,
+                ApiError.of("ACCESS_DENIED", "You are not allowed to perform this action"));
+    }
+
+    /**
+     * A write lost to a database constraint - most often two identical requests racing past the
+     * service's own check (a second open enquiry with the same tutor, the same phone number
+     * registered twice at once). The constraint is what held, so the data is consistent and the
+     * transaction has rolled back; the caller is told there was a conflict, not that the server
+     * broke.
+     *
+     * <p>Neither the exception message nor its cause is logged or returned: a constraint
+     * violation describes the offending row, and that row can hold an email address or a
+     * phone number.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(DataIntegrityViolationException ex) {
+        log.warn("Write rejected by a database constraint");
+        return respond(HttpStatus.CONFLICT, ApiError.of("CONFLICT",
+                "The request conflicts with a change made at the same time. Reload and try again."));
+    }
+
+    /**
+     * Catch-all. The stack trace is logged server-side and never reaches the client; the
+     * response carries only the request's correlation id, which is on every log line the
+     * request wrote, so a support ticket that quotes it leads straight to all of them.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception ex) {
+        String errorId = Optional.ofNullable(MDC.get(RequestIdFilter.MDC_KEY))
+                .orElseGet(() -> UUID.randomUUID().toString());
+        log.error("Unhandled exception [errorId={}]", errorId, ex);
+        return respond(HttpStatus.INTERNAL_SERVER_ERROR, ApiError.of("INTERNAL_ERROR",
+                "An unexpected error occurred. Quote reference " + errorId + " when reporting this."));
+    }
+
+    private ResponseEntity<ApiResponse<Void>> respond(HttpStatus status, ApiError error) {
+        return ResponseEntity.status(status).body(ApiResponse.failure(error));
+    }
+}

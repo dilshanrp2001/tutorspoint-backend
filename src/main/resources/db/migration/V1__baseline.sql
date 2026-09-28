@@ -1,0 +1,9 @@
+-- V1__baseline.sql
+--
+-- Flyway baseline for TutorsPoint. Intentionally empty: it establishes the
+-- migration history table and the starting point for the schema.
+--
+-- Every subsequent schema change is a NEW forward-only migration file
+-- (V2__..., V3__...). Migrations are immutable once committed — fix a mistake
+-- with another migration, never by editing one that has already run.
+-- Hibernate never creates or alters tables: ddl-auto is 'validate'.
